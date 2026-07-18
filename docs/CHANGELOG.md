@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.1
+
+Dashboard Synchronization & Diagnostics Foundation.
+
+- LiveReader now returns `{value, source, confidence}` for every field including startBtn/stopBtn
+- Added `UNKNOWN` source constant, renamed `DOM_TEXT_FALLBACK` to `DOM_TEXT`
+- Dashboard shows confidence-colored source badges on every card
+- Diagnostics restructured: SYSTEM, PROFILE, STORAGE, LIVE READER, DOM, RUNTIME sections
+- Debug report rewritten with 6 sections covering all runtime information
+- Removed deprecated `Diagnostics.getStats` method
+- Added `docs/TASKS.md` for project task tracking
+- Version bumped from 1.5.0 to 1.5.1
+
 ## v1.5.0
 
 LiveReader Phase - Dashboard synchronization with live DOM data.

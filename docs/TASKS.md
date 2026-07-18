@@ -1,0 +1,10 @@
+# AgencyBooster Task Log
+
+| ID | Title | Status | Commit |
+|----|-------|--------|--------|
+| 001 | Repository setup | Done | b411232 |
+| 002 | Documentation | Done | 19400df |
+| 003 | Userscript migration | Done | 1d2cd60 |
+| 004 | Backup stabilization | Done | 41549ea |
+| 005 | LiveReader architecture | Done | 76c5746 |
+| 006 | Dashboard Synchronization & Diagnostics Foundation | Done | pending |
