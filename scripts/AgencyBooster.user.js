@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.4.2
-// @description  Enterprise-grade management utility for AgencyBooster. Stabilization Phase.
+// @version      1.5.0
+// @description  Enterprise-grade management utility for AgencyBooster. LiveReader Phase.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-        DIAGNOSTICS_VERSION: "1.4.2",
+        DIAGNOSTICS_VERSION: "1.5.0",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -548,8 +548,8 @@
             };
         },
         getDiagnosticsObj: (profileKey, allProfiles) => {
-            const stats = Diagnostics.getStats(profileKey);
-            const data = stats.data;
+            const live = LiveReader.readAll(profileKey);
+            const data = StorageManager.readProfile(profileKey) || {};
             const id = profileKey ? profileKey.replace(CONFIG.STORAGE_PREFIX, "") : "";
             
             const chromeMatch = navigator.userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
@@ -558,7 +558,7 @@
             const totalStorageSize = StorageManager.calculateTotalUsage();
 
             const isProfileValid = Validator.isValidProfile(data);
-            const uiHooksOk = stats.startBtn || stats.stopBtn;
+            const uiHooksOk = live.startBtn || live.stopBtn;
             const domMetrics = DOMScanner.scanDOMMetrics();
 
             return {
@@ -580,8 +580,8 @@
                 },
                 "RUNTIME": {
                     "Booster UI opened": document.querySelector(".ab-modal") ? "YES" : "NO",
-                    "START button": stats.startBtn ? "FOUND" : "NOT FOUND",
-                    "STOP button": stats.stopBtn ? "FOUND" : "NOT FOUND"
+                    "START button": live.startBtn ? "FOUND" : "NOT FOUND",
+                    "STOP button": live.stopBtn ? "FOUND" : "NOT FOUND"
                 },
                 "PROFILE STRUCTURE": {
                     "messages": data.messages ? "FOUND" : "NOT FOUND",
@@ -592,8 +592,8 @@
                     "broadcast": data.broadcast ? "FOUND" : "NOT FOUND"
                 },
                 "PROGRESS SOURCE": {
-                    "IceBreaker completed": stats.ibCompleted !== CONFIG.TEXT.UNKNOWN ? `${stats.ibCompleted} (Explicit Counter)` : CONFIG.TEXT.UNKNOWN,
-                    "Broadcast completed": stats.brCompleted !== CONFIG.TEXT.UNKNOWN ? `${stats.brCompleted} (Explicit Counter)` : CONFIG.TEXT.UNKNOWN
+                    "IceBreaker completed": live.ibCompleted.value !== CONFIG.TEXT.UNKNOWN ? `${live.ibCompleted.value} (${live.ibCompleted.source})` : CONFIG.TEXT.UNKNOWN,
+                    "Broadcast completed": live.brCompleted.value !== CONFIG.TEXT.UNKNOWN ? `${live.brCompleted.value} (${live.brCompleted.source})` : CONFIG.TEXT.UNKNOWN
                 },
                 "STORAGE": {
                     "status": data.status || CONFIG.TEXT.UNKNOWN,
@@ -601,6 +601,14 @@
                     "chainProgress size": data.chainProgress ? `${Object.keys(data.chainProgress).length} items` : CONFIG.TEXT.UNKNOWN,
                     "delivered size": data.delivered ? `${data.delivered.split(';').filter(Boolean).length} items` : CONFIG.TEXT.UNKNOWN,
                     "sended size": data.sended ? `${data.sended.split(';').filter(Boolean).length} items` : CONFIG.TEXT.UNKNOWN
+                },
+                "LIVE READER": {
+                    "IB Status source": live.ibStatus.source,
+                    "BR Status source": live.brStatus.source,
+                    "IB Delay source": live.privDelay.source,
+                    "BR Delay source": live.broadDelay.source,
+                    "IB InProgress source": live.ibInProgress.source,
+                    "BR InProgress source": live.brInProgress.source
                 },
                 "DOM": {
                     "Accessible documents": domMetrics.docsCount,
@@ -613,16 +621,18 @@
                     "Profile": isProfileValid ? "OK" : "Warning",
                     "Storage": totalStorageSize < CONFIG.MAX_STORAGE_WARNING_BYTES ? "OK" : "Warning",
                     "UI Hooks": uiHooksOk ? "OK" : "Warning",
-                    "IceBreaker": stats.ibStatus,
-                    "Broadcast": stats.brStatus,
+                    "IceBreaker": live.ibStatus.value,
+                    "Broadcast": live.brStatus.value,
                     "Overall": isProfileValid && uiHooksOk ? "Healthy" : "Attention Required"
                 }
             };
         },
         generateTextReport: (profileKey, allProfiles) => {
             const diagObj = Diagnostics.getDiagnosticsObj(profileKey, allProfiles);
-            const stats = Diagnostics.getStats(profileKey);
+            const live = LiveReader.readAll(profileKey);
             const id = profileKey ? profileKey.replace(CONFIG.STORAGE_PREFIX, "") : "";
+            const v = (r) => r.value;
+            const vs = (r) => `${r.value} [${r.source}]`;
 
             return `========================================
 AGENCYBOOSTER DIAGNOSTICS REPORT
@@ -640,18 +650,18 @@ Browser             : ${diagObj.SYSTEM["Browser"]}
 ----------------------------------------
 2. STATUS & DELAYS
 ----------------------------------------
-IceBreaker Status   : ${stats.ibStatus}
-Broadcast Status    : ${stats.brStatus}
-Private Delay       : ${stats.privDelay}${stats.privDelay !== CONFIG.TEXT.UNKNOWN ? " sec" : ""}
-Broadcast Delay     : ${stats.broadDelay}${stats.broadDelay !== CONFIG.TEXT.UNKNOWN ? " sec" : ""}
+IceBreaker Status   : ${vs(live.ibStatus)}
+Broadcast Status    : ${vs(live.brStatus)}
+Private Delay       : ${v(live.privDelay)}${v(live.privDelay) !== CONFIG.TEXT.UNKNOWN ? " sec" : ""} [${live.privDelay.source}]
+Broadcast Delay     : ${v(live.broadDelay)}${v(live.broadDelay) !== CONFIG.TEXT.UNKNOWN ? " sec" : ""} [${live.broadDelay.source}]
 
 ----------------------------------------
 3. PROGRESS & COUNTERS
 ----------------------------------------
-IceBreaker Completed: ${stats.ibCompleted}
-IceBreaker In Prog  : ${stats.ibInProgress}
-Broadcast Completed : ${stats.brCompleted}
-Broadcast In Prog   : ${stats.brInProgress}
+IceBreaker Completed: ${vs(live.ibCompleted)}
+IceBreaker In Prog  : ${vs(live.ibInProgress)}
+Broadcast Completed : ${vs(live.brCompleted)}
+Broadcast In Prog   : ${vs(live.brInProgress)}
 
 ----------------------------------------
 4. RUNTIME STATUS
@@ -691,7 +701,246 @@ chainProgress       : ${diagObj["PROFILE STRUCTURE"]["chainProgress"]}
 delivered           : ${diagObj["PROFILE STRUCTURE"]["delivered"]}
 sended              : ${diagObj["PROFILE STRUCTURE"]["sended"]}
 broadcast           : ${diagObj["PROFILE STRUCTURE"]["broadcast"]}
-========================================`;
+
+----------------------------------------
+9. LIVE READER SOURCES
+----------------------------------------
+IB Status           : ${diagObj["LIVE READER"]["IB Status source"]}
+BR Status           : ${diagObj["LIVE READER"]["BR Status source"]}
+IB Delay            : ${diagObj["LIVE READER"]["IB Delay source"]}
+BR Delay            : ${diagObj["LIVE READER"]["BR Delay source"]}
+IB InProgress       : ${diagObj["LIVE READER"]["IB InProgress source"]}
+BR InProgress       : ${diagObj["LIVE READER"]["BR InProgress source"]}
+=======================================`;
+        }
+    };
+
+    const LiveReader = {
+        SOURCES: {
+            DOM_DIRECT: "dom_direct",
+            DOM_STRUCTURED: "dom_structured",
+            LOCAL_STORAGE: "local_storage",
+            DOM_TEXT_FALLBACK: "dom_text_fallback"
+        },
+        CONFIDENCE: {
+            HIGH: "high",
+            MEDIUM: "medium",
+            LOW: "low",
+            NONE: "none"
+        },
+        _makeResult: (value, source, confidence) => ({
+            value,
+            source,
+            confidence
+        }),
+        _textFallbackRegex: /(?:status|delay|in\s*progress|completed)\s*[:=]\s*([^\n<]{1,60})/gi,
+        _findLabeledValue: (docs, labelVariants) => {
+            for (const doc of docs) {
+                try {
+                    const allElements = doc.querySelectorAll("span, div, td, p, label, strong, b, em, h1, h2, h3, h4, h5, h6, input, textarea");
+                    for (const el of allElements) {
+                        const text = (el.textContent || "").trim();
+                        for (const variant of labelVariants) {
+                            const lowerText = text.toLowerCase();
+                            const lowerVariant = variant.toLowerCase();
+                            if (lowerText.startsWith(lowerVariant)) {
+                                const after = text.substring(variant.length).replace(/^[\s:=]+/, "").trim();
+                                if (after.length > 0 && after.length < 80) return after;
+                            }
+                        }
+                        const label = el.previousElementSibling || el.parentElement;
+                        if (label) {
+                            const labelText = (label.textContent || "").trim().toLowerCase();
+                            for (const variant of labelVariants) {
+                                if (labelText.includes(variant.toLowerCase())) {
+                                    const val = text.replace(/^[\s:=]+/, "").trim();
+                                    if (val.length > 0 && val.length < 80) return val;
+                                }
+                            }
+                        }
+                    }
+                } catch {}
+            }
+            return null;
+        },
+        _extractNumber: (raw) => {
+            if (raw === null || raw === undefined) return null;
+            const str = String(raw).trim();
+            const num = parseInt(str, 10);
+            return isNaN(num) ? null : num;
+        },
+        _resolveStatus: (raw) => {
+            if (!raw) return null;
+            const s = raw.toLowerCase();
+            if (s.includes("running")) return "Running";
+            if (s.includes("stopped") || s.includes("stop")) return "Stopped";
+            if (s.includes("progress")) return "Progress";
+            if (s.includes("paused") || s.includes("pause")) return "Paused";
+            return null;
+        },
+        _resolveDelay: (raw) => {
+            if (!raw) return null;
+            const cleaned = raw.replace(/[^\d.]/g, "");
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? null : num;
+        },
+        _providerDOMDirect: (docs) => {
+            const result = {};
+            const tryFind = (selectors, transform) => {
+                for (const doc of docs) {
+                    try {
+                        for (const sel of selectors) {
+                            const el = doc.querySelector(sel);
+                            if (el) {
+                                const raw = (el.value !== undefined ? el.value : el.textContent || "").trim();
+                                return transform ? transform(raw) : raw;
+                            }
+                        }
+                    } catch {}
+                }
+                return null;
+            };
+            result.ibStatus = tryFind(
+                ["[data-module='icebreaker'][data-field='status']", "[data-ib-status]", ".ib-status", "#ib-status"],
+                LiveReader._resolveStatus
+            );
+            result.brStatus = tryFind(
+                ["[data-module='broadcast'][data-field='status']", "[data-br-status]", ".br-status", "#br-status"],
+                LiveReader._resolveStatus
+            );
+            result.privDelay = tryFind(
+                ["[data-module='icebreaker'][data-field='delay']", "[data-ib-delay]", ".ib-delay", "#ib-delay"],
+                LiveReader._resolveDelay
+            );
+            result.broadDelay = tryFind(
+                ["[data-module='broadcast'][data-field='delay']", "[data-br-delay]", ".br-delay", "#br-delay"],
+                LiveReader._resolveDelay
+            );
+            result.ibInProgress = tryFind(
+                ["[data-module='icebreaker'][data-field='inprogress']", "[data-ib-inprogress]", ".ib-inprogress", "#ib-inprogress"],
+                LiveReader._extractNumber
+            );
+            result.ibCompleted = tryFind(
+                ["[data-module='icebreaker'][data-field='completed']", "[data-ib-completed]", ".ib-completed", "#ib-completed"],
+                LiveReader._extractNumber
+            );
+            result.brInProgress = tryFind(
+                ["[data-module='broadcast'][data-field='inprogress']", "[data-br-inprogress]", ".br-inprogress", "#br-inprogress"],
+                LiveReader._extractNumber
+            );
+            result.brCompleted = tryFind(
+                ["[data-module='broadcast'][data-field='completed']", "[data-br-completed]", ".br-completed", "#br-completed"],
+                LiveReader._extractNumber
+            );
+            return result;
+        },
+        _providerDOMStructured: (docs) => {
+            const result = {};
+            result.ibStatus = LiveReader._resolveStatus(
+                LiveReader._findLabeledValue(docs, ["IceBreaker Status", "IB Status", "Private Status"])
+            );
+            result.brStatus = LiveReader._resolveStatus(
+                LiveReader._findLabeledValue(docs, ["Broadcast Status", "BR Status", "Group Status"])
+            );
+            result.privDelay = LiveReader._resolveDelay(
+                LiveReader._findLabeledValue(docs, ["Private Delay", "IB Delay", "IceBreaker Delay", "Private Interval"])
+            );
+            result.broadDelay = LiveReader._resolveDelay(
+                LiveReader._findLabeledValue(docs, ["Broadcast Delay", "BR Delay", "Group Delay", "Broadcast Interval"])
+            );
+            result.ibInProgress = LiveReader._extractNumber(
+                LiveReader._findLabeledValue(docs, ["IB In Progress", "IceBreaker In Progress", "Private In Progress", "IB Progressing"])
+            );
+            result.ibCompleted = LiveReader._extractNumber(
+                LiveReader._findLabeledValue(docs, ["IB Completed", "IceBreaker Completed", "Private Completed", "IB Done"])
+            );
+            result.brInProgress = LiveReader._extractNumber(
+                LiveReader._findLabeledValue(docs, ["BR In Progress", "Broadcast In Progress", "Group In Progress", "BR Progressing"])
+            );
+            result.brCompleted = LiveReader._extractNumber(
+                LiveReader._findLabeledValue(docs, ["BR Completed", "Broadcast Completed", "Group Completed", "BR Done"])
+            );
+            return result;
+        },
+        _providerLocalStorage: (profileKey) => {
+            const data = StorageManager.readProfile(profileKey) || {};
+            const isSenderStopped = SenderManager.isStopped();
+            let ibStatus = StateManager.getModuleStatus(data, "icebreaker");
+            if (ibStatus === "Running" && isSenderStopped) ibStatus = "Stopped";
+            return {
+                ibStatus: ibStatus !== CONFIG.TEXT.UNKNOWN ? ibStatus : null,
+                brStatus: StateManager.getModuleStatus(data, "broadcast") !== CONFIG.TEXT.UNKNOWN ? StateManager.getModuleStatus(data, "broadcast") : null,
+                privDelay: StateManager.getDelayValue(data, "icebreaker") !== CONFIG.TEXT.UNKNOWN ? StateManager.getDelayValue(data, "icebreaker") : null,
+                broadDelay: StateManager.getDelayValue(data, "broadcast") !== CONFIG.TEXT.UNKNOWN ? StateManager.getDelayValue(data, "broadcast") : null,
+                ibInProgress: StateManager.getExactCount(data, "ibInProgress") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "ibInProgress") : null,
+                ibCompleted: StateManager.getExactCount(data, "ibCompleted") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "ibCompleted") : null,
+                brInProgress: StateManager.getExactCount(data, "brInProgress") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "brInProgress") : null,
+                brCompleted: StateManager.getExactCount(data, "brCompleted") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "brCompleted") : null
+            };
+        },
+        _providerDOMTextFallback: (docs) => {
+            const result = {};
+            const allText = [];
+            for (const doc of docs) {
+                try {
+                    allText.push(doc.body ? doc.body.innerText : "");
+                } catch {}
+            }
+            const blob = allText.join("\n");
+            const matches = [];
+            let m;
+            const re = new RegExp(LiveReader._textFallbackRegex.source, "gi");
+            while ((m = re.exec(blob)) !== null) {
+                matches.push({ label: m[0].split(/[\s:=]/)[0].toLowerCase(), raw: m[1].trim() });
+            }
+            for (const match of matches) {
+                const label = match.label;
+                if (!result.ibStatus && (label.includes("icebreaker") || label.includes("ib") || label.includes("private")) && label.includes("status")) {
+                    result.ibStatus = LiveReader._resolveStatus(match.raw);
+                } else if (!result.brStatus && (label.includes("broadcast") || label.includes("br") || label.includes("group")) && label.includes("status")) {
+                    result.brStatus = LiveReader._resolveStatus(match.raw);
+                } else if (!result.privDelay && (label.includes("icebreaker") || label.includes("ib") || label.includes("private")) && label.includes("delay")) {
+                    result.privDelay = LiveReader._resolveDelay(match.raw);
+                } else if (!result.broadDelay && (label.includes("broadcast") || label.includes("br") || label.includes("group")) && label.includes("delay")) {
+                    result.broadDelay = LiveReader._resolveDelay(match.raw);
+                }
+            }
+            return result;
+        },
+        _mergeField: (providers, field) => {
+            const order = [
+                { data: providers.domDirect, source: LiveReader.SOURCES.DOM_DIRECT },
+                { data: providers.domStructured, source: LiveReader.SOURCES.DOM_STRUCTURED },
+                { data: providers.localStorage, source: LiveReader.SOURCES.LOCAL_STORAGE },
+                { data: providers.domTextFallback, source: LiveReader.SOURCES.DOM_TEXT_FALLBACK }
+            ];
+            for (const { data, source } of order) {
+                if (data[field] !== null && data[field] !== undefined) {
+                    const confidence = source === LiveReader.SOURCES.DOM_DIRECT ? LiveReader.CONFIDENCE.HIGH
+                        : source === LiveReader.SOURCES.DOM_STRUCTURED ? LiveReader.CONFIDENCE.MEDIUM
+                        : source === LiveReader.SOURCES.LOCAL_STORAGE ? LiveReader.CONFIDENCE.LOW
+                        : LiveReader.CONFIDENCE.LOW;
+                    return LiveReader._makeResult(data[field], source, confidence);
+                }
+            }
+            return LiveReader._makeResult(CONFIG.TEXT.UNKNOWN, "none", LiveReader.CONFIDENCE.NONE);
+        },
+        readAll: (profileKey) => {
+            const docs = DOMManager.getAccessibleDocuments(window);
+            const providers = {
+                domDirect: LiveReader._providerDOMDirect(docs),
+                domStructured: LiveReader._providerDOMStructured(docs),
+                localStorage: LiveReader._providerLocalStorage(profileKey),
+                domTextFallback: LiveReader._providerDOMTextFallback(docs)
+            };
+            const fields = ["ibStatus", "brStatus", "privDelay", "broadDelay", "ibInProgress", "ibCompleted", "brInProgress", "brCompleted"];
+            const result = {};
+            for (const field of fields) {
+                result[field] = LiveReader._mergeField(providers, field);
+            }
+            result.startBtn = !!DOMManager.findButton(CONFIG.SELECTORS.START);
+            result.stopBtn = !!DOMManager.findButton(CONFIG.SELECTORS.STOP);
+            return result;
         }
     };
 
@@ -736,14 +985,14 @@ broadcast           : ${diagObj["PROFILE STRUCTURE"]["broadcast"]}
             return DOMScanner.scanDOMMetrics();
         },
         collectStatistics: (profileKey) => {
-            const data = StorageManager.readProfile(profileKey) || {};
+            const live = LiveReader.readAll(profileKey);
             return {
-                ibStatus: StateManager.getModuleStatus(data, 'icebreaker'),
-                brStatus: StateManager.getModuleStatus(data, 'broadcast'),
-                ibCompleted: StateManager.getExactCount(data, 'ibCompleted'),
-                ibInProgress: StateManager.getExactCount(data, 'ibInProgress'),
-                brCompleted: StateManager.getExactCount(data, 'brCompleted'),
-                brInProgress: StateManager.getExactCount(data, 'brInProgress')
+                ibStatus: live.ibStatus.value,
+                brStatus: live.brStatus.value,
+                ibCompleted: live.ibCompleted.value,
+                ibInProgress: live.ibInProgress.value,
+                brCompleted: live.brCompleted.value,
+                brInProgress: live.brInProgress.value
             };
         },
         collectDiagnostics: (profileKey, allProfiles) => {
@@ -1113,42 +1362,46 @@ broadcast           : ${diagObj["PROFILE STRUCTURE"]["broadcast"]}
         },
 
         updateDashboard: () => {
-            const stats = Diagnostics.getStats(CustomUI.activeProfileKey);
+            const live = LiveReader.readAll(CustomUI.activeProfileKey);
             const dashView = document.getElementById("ab-view-dashboard");
             if (!dashView) return;
+
+            const src = (r) => `<span style="font-size:9px;color:var(--ab-text-dim);font-weight:normal;margin-left:4px;">[${r.source}]</span>`;
+            const val = (r) => r.value;
+            const delayVal = (r) => r.value !== CONFIG.TEXT.UNKNOWN ? `${r.value} sec` : CONFIG.TEXT.UNKNOWN;
 
             dashView.innerHTML = `
                 <div class="ab-grid">
                     <div class="ab-card">
-                        <div class="ab-card-title">IceBreaker Status</div>
-                        <div class="ab-card-value">${stats.ibStatus}</div>
+                        <div class="ab-card-title">IceBreaker Status${src(live.ibStatus)}</div>
+                        <div class="ab-card-value">${val(live.ibStatus)}</div>
                     </div>
                     <div class="ab-card">
-                        <div class="ab-card-title">Broadcast Status</div>
-                        <div class="ab-card-value">${stats.brStatus}</div>
+                        <div class="ab-card-title">Broadcast Status${src(live.brStatus)}</div>
+                        <div class="ab-card-value">${val(live.brStatus)}</div>
                     </div>
                     
                     <div class="ab-card">
-                        <div class="ab-card-title">Private Delay</div>
-                        <div class="ab-card-value">${stats.privDelay} ${stats.privDelay !== CONFIG.TEXT.UNKNOWN ? "sec" : ""}</div>
+                        <div class="ab-card-title">Private Delay${src(live.privDelay)}</div>
+                        <div class="ab-card-value">${delayVal(live.privDelay)}</div>
                     </div>
                     <div class="ab-card">
-                        <div class="ab-card-title">Broadcast Delay</div>
-                        <div class="ab-card-value">${stats.broadDelay} ${stats.broadDelay !== CONFIG.TEXT.UNKNOWN ? "sec" : ""}</div>
+                        <div class="ab-card-title">Broadcast Delay${src(live.broadDelay)}</div>
+                        <div class="ab-card-value">${delayVal(live.broadDelay)}</div>
                     </div>
 
                     <div class="ab-card">
-                        <div class="ab-card-title">IceBreaker Progress</div>
+                        <div class="ab-card-title">IceBreaker Progress${src(live.ibInProgress)}</div>
                         <div class="ab-card-value" style="font-size:13px; font-weight:normal;">
-                            <div style="margin-top:2px;">In Progress: <strong style="color:var(--ab-text)">${stats.ibInProgress}</strong></div>
-                            <div style="margin-top:4px;">Completed: <strong style="color:var(--ab-text)">${stats.ibCompleted}</strong></div>
+                            <div style="margin-top:2px;">In Progress: <strong style="color:var(--ab-text)">${val(live.ibInProgress)}</strong></div>
+                            <div style="margin-top:4px;">Completed: <strong style="color:var(--ab-text)">${val(live.ibCompleted)}</strong></div>
                         </div>
                     </div>
                     <div class="ab-card">
-                        <div class="ab-card-title">Broadcast Progress</div>
+                        <div class="ab-card-title">Broadcast Progress${src(live.brInProgress)}</div>
                         <div class="ab-card-value" style="font-size:13px; font-weight:normal;">
-                            <div style="margin-top:2px;">In Progress: <strong style="color:var(--ab-text)">${stats.brInProgress}</strong></div>
-                            <div style="margin-top:4px;">Completed: <strong style="color:var(--ab-text)">${stats.brCompleted}</strong></div>
+                            <div style="margin-top:2px;">In Progress: <strong style="color:var(--ab-text)">${val(live.brInProgress)}</strong></div>
+                            <div style="margin-top:4px;">Completed: <strong style="color:var(--ab-text)">${val(live.brCompleted)}</strong></div>
                         </div>
                     </div>
                 </div>
