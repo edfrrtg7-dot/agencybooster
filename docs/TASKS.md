@@ -7,4 +7,4 @@
 | 003 | Userscript migration | Done | 1d2cd60 |
 | 004 | Backup stabilization | Done | 41549ea |
 | 005 | LiveReader architecture | Done | 76c5746 |
-| 006 | Dashboard Synchronization & Diagnostics Foundation | Done | pending |
+| 006 | Dashboard Synchronization & Diagnostics Foundation | Done | ae6ed93 |
