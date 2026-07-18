@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.6
+
+Finance Widget — lightweight floating widget for credit balance and transaction tracking.
+
+- Added `FinanceManager` module with localStorage persistence and DOM-based data fetching
+- Floating draggable widget, default position bottom-left, position persisted across reloads
+- Collapsible/closable with state persistence
+- Displays: credits total, transactions count, selected period, last refresh time
+- Period selector (Today, This Week, This Month, All Time) — stored permanently, never auto-changes
+- Manual refresh only — no polling, no timers, no background requests
+- "Open Finance" button navigates to configurable finance page URL
+- Reopen widget via "Finance Widget" button in Manager view
+- Diagnostics: new FINANCE section in object, text report, and debug bundle showing last refresh, request duration, status
+- Widget initializes on `App.start`, renders only in top frame
+- Drag implemented via mousedown/mousemove/mouseup on title bar
+- Version bumped from 1.5.5 to 1.5.6
+
 ## v1.5.5
 
 Snippet Import — full import functionality with JSON/TXT support, preview, validation, and diagnostics.

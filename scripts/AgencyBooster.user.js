@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.5
-// @description  Enterprise-grade management utility for AgencyBooster. Snippet Import.
+// @version      1.5.6
+// @description  Enterprise-grade management utility for AgencyBooster. Finance Widget.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.5.5",
+            DIAGNOSTICS_VERSION: "1.5.6",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -55,7 +55,11 @@
             IMPORT_JSON_INVALID: "Invalid JSON structure. Expected {\"private\": [...], \"broadcast\": [...]} or a flat array of snippets.",
             IMPORT_CANCELLED: "Import cancelled. No changes were made.",
             IMPORT_UNSUPPORTED: "Unsupported file type. Please select a .txt or .json file."
-        }
+        },
+        FINANCE_STORAGE_PREFIX: "agencybooster-finance-",
+        FINANCE_DEFAULT_PERIOD: "all",
+        FINANCE_URL: "/finance",
+        FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 260 }
     };
 
     // 3. MODULES WITH STRICT PUBLIC APIS
@@ -724,6 +728,156 @@
         }
     };
 
+    const FinanceManager = {
+        _cache: null,
+
+        _read(key) {
+            try {
+                const raw = localStorage.getItem(CONFIG.FINANCE_STORAGE_PREFIX + key);
+                return raw ? JSON.parse(raw) : null;
+            } catch { return null; }
+        },
+
+        _write(key, value) {
+            try {
+                localStorage.setItem(CONFIG.FINANCE_STORAGE_PREFIX + key, JSON.stringify(value));
+                return true;
+            } catch { return false; }
+        },
+
+        getDefaultState() {
+            return {
+                x: null,
+                y: null,
+                collapsed: false,
+                closed: false,
+                period: CONFIG.FINANCE_DEFAULT_PERIOD,
+                lastRefresh: null,
+                lastDuration: null,
+                lastStatus: null,
+                credits: null,
+                transactions: null
+            };
+        },
+
+        readState() {
+            return this._read("widget-state") || this.getDefaultState();
+        },
+
+        writeState(state) {
+            return this._write("widget-state", state);
+        },
+
+        getPeriods() {
+            return [
+                { value: "today", label: "Today" },
+                { value: "week", label: "This Week" },
+                { value: "month", label: "This Month" },
+                { value: "all", label: "All Time" }
+            ];
+        },
+
+        getPeriodLabel(value) {
+            return (this.getPeriods().find(p => p.value === value) || {}).label || value;
+        },
+
+        async fetchFinanceData(period) {
+            const startTime = performance.now();
+            try {
+                const docs = DOMManager.getAllAccessibleDocuments(window);
+                let credits = null;
+                let transactions = null;
+
+                for (const doc of docs) {
+                    try {
+                        if (credits === null) {
+                            const creditEl = doc.querySelector("[class*='credit'], [class*='balance'], [data-field='credits'], [data-field='balance']");
+                            if (creditEl) {
+                                const raw = (creditEl.textContent || "").trim();
+                                const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
+                                if (!isNaN(num)) credits = num;
+                            }
+                        }
+                        if (transactions === null) {
+                            const txRows = doc.querySelectorAll("table tbody tr, .transaction-row, [class*='transaction']");
+                            if (txRows.length > 0) {
+                                const filtered = FinanceManager._filterByPeriod(txRows, period, doc);
+                                transactions = filtered;
+                            }
+                        }
+                    } catch {}
+                    if (credits !== null && transactions !== null) break;
+                }
+
+                if (credits === null) {
+                    const allText = [];
+                    for (const doc of docs) {
+                        try { allText.push(doc.body ? doc.body.innerText : ""); } catch {}
+                    }
+                    const blob = allText.join("\n");
+                    const creditMatch = blob.match(/(?:credits?|balance)\s*[:=]?\s*([\d,.]+)/i);
+                    if (creditMatch) credits = parseFloat(creditMatch[1].replace(/,/g, ""));
+                }
+
+                const duration = Math.round(performance.now() - startTime);
+                const state = FinanceManager.readState();
+                state.credits = isNaN(credits) ? null : credits;
+                state.transactions = transactions;
+                state.lastRefresh = Utils.getTimestamp();
+                state.lastDuration = duration;
+                state.lastStatus = (credits !== null || transactions !== null) ? "ok" : "no_data";
+                FinanceManager.writeState(state);
+                FinanceManager._cache = state;
+                return state;
+            } catch (e) {
+                const duration = Math.round(performance.now() - startTime);
+                const state = FinanceManager.readState();
+                state.lastRefresh = Utils.getTimestamp();
+                state.lastDuration = duration;
+                state.lastStatus = "error";
+                FinanceManager.writeState(state);
+                FinanceManager._cache = state;
+                Logger.error("FinanceWidget: fetch failed", e);
+                return state;
+            }
+        },
+
+        _filterByPeriod(rows, period, doc) {
+            if (period === "all") return rows.length;
+            const now = new Date();
+            let cutoff = new Date(0);
+            if (period === "today") {
+                cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            } else if (period === "week") {
+                cutoff = new Date(now);
+                cutoff.setDate(cutoff.getDate() - 7);
+            } else if (period === "month") {
+                cutoff = new Date(now);
+                cutoff.setMonth(cutoff.getMonth() - 1);
+            }
+            let count = 0;
+            for (const row of rows) {
+                try {
+                    const text = (row.textContent || "").replace(/\s+/g, " ").trim();
+                    const dateMatch = text.match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
+                    if (dateMatch) {
+                        const parsed = new Date(dateMatch[1]);
+                        if (!isNaN(parsed) && parsed >= cutoff) count++;
+                    } else {
+                        count++;
+                    }
+                } catch { count++; }
+            }
+            return count;
+        },
+
+        getCachedState() {
+            if (FinanceManager._cache) return FinanceManager._cache;
+            FinanceManager._cache = FinanceManager.readState();
+            return FinanceManager._cache;
+        }
+    };
+
     const Diagnostics = {
         _countBackups: () => {
             let count = 0;
@@ -745,6 +899,7 @@
             if (typeof DelayManager !== "undefined") modules.push("DelayManager");
             if (typeof SnippetManager !== "undefined") modules.push("SnippetManager");
             if (typeof SnippetImporter !== "undefined") modules.push("SnippetImporter");
+            if (typeof FinanceManager !== "undefined") modules.push("FinanceManager");
             if (typeof DOMScanner !== "undefined") modules.push("DOMScanner");
             if (typeof Validator !== "undefined") modules.push("Validator");
             if (typeof CustomUI !== "undefined") modules.push("CustomUI");
@@ -886,6 +1041,19 @@
                     });
                     return section;
                 })(),
+                "FINANCE": (() => {
+                    const fs = FinanceManager.getCachedState();
+                    return {
+                        "Last refresh": fs.lastRefresh || "Never",
+                        "Request duration": fs.lastDuration !== null ? `${fs.lastDuration}ms` : "N/A",
+                        "Last request status": fs.lastStatus || "N/A",
+                        "Selected period": FinanceManager.getPeriodLabel(fs.period),
+                        "Credits": fs.credits !== null ? fs.credits : "Not loaded",
+                        "Transactions": fs.transactions !== null ? fs.transactions : "Not loaded",
+                        "Widget collapsed": fs.collapsed ? "Yes" : "No",
+                        "Widget visible": fs.closed ? "No" : "Yes"
+                    };
+                })(),
                 "ERROR LOG": errorSummary,
                 "ERROR HISTORY": recentErrors.length > 0
                     ? recentErrors.map((err, i) => ({
@@ -1005,7 +1173,19 @@ Last invalid        : ${diagObj["IMPORT HISTORY"]["Last invalid count"] ?? "N/A"
 Total imports       : ${diagObj["IMPORT HISTORY"]["Total imports"] ?? 0}
 
 ----------------------------------------
-8. ERROR LOG
+8. FINANCE
+----------------------------------------
+Last refresh        : ${diagObj.FINANCE["Last refresh"]}
+Request duration    : ${diagObj.FINANCE["Request duration"]}
+Last request status : ${diagObj.FINANCE["Last request status"]}
+Selected period     : ${diagObj.FINANCE["Selected period"]}
+Credits             : ${diagObj.FINANCE["Credits"]}
+Transactions        : ${diagObj.FINANCE["Transactions"]}
+Widget collapsed    : ${diagObj.FINANCE["Widget collapsed"]}
+Widget visible      : ${diagObj.FINANCE["Widget visible"]}
+
+----------------------------------------
+9. ERROR LOG
 ----------------------------------------
 Error count         : ${diagObj["ERROR LOG"]["Error count"]}
 ${diagObj["ERROR LOG"]["Status"] ? `Status              : ${diagObj["ERROR LOG"]["Status"]}` : `Last error          : ${diagObj["ERROR LOG"]["Last error message"]}`}
@@ -1124,6 +1304,20 @@ ${errorLines}
                         totalImports: history.length,
                         lastImport: history.length > 0 ? history[history.length - 1] : null,
                         history: history
+                    };
+                })(),
+                finance: (() => {
+                    const fs = FinanceManager.getCachedState();
+                    return {
+                        lastRefresh: fs.lastRefresh,
+                        lastDuration: fs.lastDuration,
+                        lastStatus: fs.lastStatus,
+                        period: fs.period,
+                        credits: fs.credits,
+                        transactions: fs.transactions,
+                        collapsed: fs.collapsed,
+                        closed: fs.closed,
+                        position: { x: fs.x, y: fs.y }
                     };
                 })(),
                 errors: {
@@ -1511,6 +1705,7 @@ ${errorLines}
 
                 @keyframes ab-fade-in { to { opacity: 1; } }
                 @keyframes ab-slide-up { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+                @keyframes ab-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
                 .ab-modal {
                     background: var(--ab-bg); border-radius: 12px; width: 400px; max-height: 90vh;
@@ -1576,6 +1771,76 @@ ${errorLines}
                 .ab-table td:first-child { color: var(--ab-text-dim); width: 45%; }
                 
                 .ab-toast { position: fixed; bottom: 80px; right: 20px; background: var(--ab-success); color: white; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 500; z-index: ${CONFIG.OVERLAY_Z_INDEX_BASE}; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: ab-slide-up 0.3s forwards; }
+
+                #ab-finance-widget {
+                    position: fixed; bottom: 24px; left: 24px;
+                    width: ${CONFIG.FINANCE_WIDGET_SIZE.WIDTH}px;
+                    background: var(--ab-bg); border: 1px solid var(--ab-border);
+                    border-radius: 10px; z-index: ${CONFIG.MODAL_Z_INDEX - 1};
+                    font-family: var(--ab-font); color: var(--ab-text);
+                    box-shadow: 0 8px 32px 0 rgba(0,0,0,0.5);
+                    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+                    user-select: none; display: flex; flex-direction: column;
+                    transition: height 0.25s ease, opacity 0.2s ease;
+                }
+                #ab-finance-widget.ab-finance-hidden { display: none; }
+                #ab-finance-widget.ab-finance-collapsed {
+                    height: ${CONFIG.FINANCE_WIDGET_SIZE.COLLAPSED_HEIGHT}px;
+                    overflow: hidden;
+                }
+                #ab-finance-widget.ab-finance-expanded {
+                    height: ${CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT}px;
+                    overflow: hidden;
+                }
+                .ab-finance-header {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 8px 12px; cursor: grab; border-bottom: 1px solid var(--ab-border);
+                    background: rgba(255,255,255,0.03); min-height: ${CONFIG.FINANCE_WIDGET_SIZE.COLLAPSED_HEIGHT}px;
+                    border-radius: 10px 10px 0 0; flex-shrink: 0;
+                }
+                .ab-finance-header:active { cursor: grabbing; }
+                .ab-finance-header-title {
+                    font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px;
+                    color: var(--ab-text-dim); text-transform: uppercase; letter-spacing: 0.5px;
+                }
+                .ab-finance-header-title svg { width: 14px; height: 14px; fill: var(--ab-accent); }
+                .ab-finance-header-actions { display: flex; gap: 4px; }
+                .ab-finance-header-actions button {
+                    background: none; border: none; color: var(--ab-text-dim); cursor: pointer;
+                    padding: 2px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+                    transition: all 0.15s;
+                }
+                .ab-finance-header-actions button:hover { color: var(--ab-text); background: rgba(255,255,255,0.1); }
+                .ab-finance-header-actions button svg { width: 14px; height: 14px; fill: currentColor; }
+                .ab-finance-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; }
+                .ab-finance-body::-webkit-scrollbar { width: 4px; }
+                .ab-finance-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+                .ab-finance-row { display: flex; justify-content: space-between; align-items: center; }
+                .ab-finance-label { font-size: 11px; color: var(--ab-text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+                .ab-finance-value { font-size: 13px; font-weight: 600; color: var(--ab-text); }
+                .ab-finance-value.ab-finance-accent { color: var(--ab-accent); }
+                .ab-finance-value.ab-finance-success { color: var(--ab-success); }
+                .ab-finance-value.ab-finance-warning { color: var(--ab-warning); }
+                .ab-finance-select {
+                    background: rgba(0,0,0,0.3); border: 1px solid var(--ab-border); color: var(--ab-text);
+                    padding: 4px 6px; border-radius: 4px; font-size: 11px; font-family: var(--ab-font);
+                    outline: none; cursor: pointer;
+                }
+                .ab-finance-select:focus { border-color: var(--ab-accent); }
+                .ab-finance-btn-row { display: flex; gap: 6px; margin-top: 2px; }
+                .ab-finance-btn {
+                    flex: 1; background: rgba(255,255,255,0.05); color: var(--ab-text); border: 1px solid var(--ab-border);
+                    padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500;
+                    text-align: center; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 4px;
+                }
+                .ab-finance-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+                .ab-finance-btn:active { transform: scale(0.97); }
+                .ab-finance-btn.primary { background: var(--ab-accent); border-color: var(--ab-accent); color: #fff; }
+                .ab-finance-btn.primary:hover { background: var(--ab-accent-hover); }
+                .ab-finance-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+                .ab-finance-btn svg { width: 12px; height: 12px; fill: currentColor; }
+                .ab-finance-divider { height: 1px; background: var(--ab-border); margin: 2px 0; }
+                .ab-finance-status { font-size: 10px; color: var(--ab-text-dim); text-align: center; margin-top: 2px; }
             `;
             document.head.appendChild(style);
         },
@@ -1869,6 +2134,11 @@ ${errorLines}
                     <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
                     Import Snippets
                 </button>
+                <div style="border-top:1px solid var(--ab-border); margin: 8px 0;"></div>
+                <button class="ab-btn" id="ab-action-finance">
+                    <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+                    Finance Widget
+                </button>
             `;
             
             document.getElementById("ab-action-reset").onclick = () => App.handleReset();
@@ -1885,6 +2155,10 @@ ${errorLines}
                     App.handleImportSnippets(file);
                     e.target.value = ""; 
                 }
+            };
+
+            document.getElementById("ab-action-finance").onclick = () => {
+                CustomUI.showFinanceWidget();
             };
         },
 
@@ -1946,6 +2220,187 @@ ${errorLines}
             
             DOMManager.appendBody(btn);
             btn.onclick = () => App.openMenu();
+        },
+
+        buildFinanceWidget: () => {
+            DOMManager.removeElements("#ab-finance-widget");
+            if (window !== window.top) return;
+
+            const state = FinanceManager.readState();
+            if (state.closed) return;
+
+            const widget = document.createElement("div");
+            widget.id = "ab-finance-widget";
+            widget.classList.add(state.collapsed ? "ab-finance-collapsed" : "ab-finance-expanded");
+
+            if (state.x !== null && state.y !== null) {
+                widget.style.left = state.x + "px";
+                widget.style.top = state.y + "px";
+                widget.style.bottom = "auto";
+            }
+
+            CustomUI._renderFinanceWidget(widget, state);
+            DOMManager.appendBody(widget);
+            CustomUI._initFinanceDrag(widget);
+        },
+
+        _renderFinanceWidget: (widget, state) => {
+            const periodOptions = FinanceManager.getPeriods()
+                .map(p => `<option value="${p.value}" ${p.value === state.period ? "selected" : ""}>${p.label}</option>`)
+                .join("");
+
+            const creditsDisplay = state.credits !== null
+                ? `<span class="ab-finance-value ab-finance-accent">${state.credits.toLocaleString()}</span>`
+                : `<span class="ab-finance-value" style="color:var(--ab-text-dim)">—</span>`;
+
+            const txDisplay = state.transactions !== null
+                ? `<span class="ab-finance-value">${state.transactions}</span>`
+                : `<span class="ab-finance-value" style="color:var(--ab-text-dim)">—</span>`;
+
+            const lastRefreshDisplay = state.lastRefresh
+                ? new Date(state.lastRefresh).toLocaleTimeString()
+                : "Never";
+
+            const statusDisplay = state.lastStatus === "ok"
+                ? `<span class="ab-finance-status" style="color:var(--ab-success)">Last refresh: ${lastRefreshDisplay}</span>`
+                : state.lastStatus === "error"
+                    ? `<span class="ab-finance-status" style="color:var(--ab-danger)">Last refresh failed</span>`
+                    : `<span class="ab-finance-status">Last refresh: ${lastRefreshDisplay}</span>`;
+
+            const collapseIcon = state.collapsed
+                ? `<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>`
+                : `<svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>`;
+
+            widget.innerHTML = `
+                <div class="ab-finance-header" id="ab-finance-drag-handle">
+                    <div class="ab-finance-header-title">
+                        <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+                        Finance
+                    </div>
+                    <div class="ab-finance-header-actions">
+                        <button id="ab-finance-toggle" title="Collapse/Expand">${collapseIcon}</button>
+                        <button id="ab-finance-close" title="Close widget">
+                            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="ab-finance-body">
+                    <div class="ab-finance-row">
+                        <span class="ab-finance-label">Credits</span>
+                        ${creditsDisplay}
+                    </div>
+                    <div class="ab-finance-row">
+                        <span class="ab-finance-label">Transactions</span>
+                        ${txDisplay}
+                    </div>
+                    <div class="ab-finance-divider"></div>
+                    <div class="ab-finance-row">
+                        <span class="ab-finance-label">Period</span>
+                        <select class="ab-finance-select" id="ab-finance-period">${periodOptions}</select>
+                    </div>
+                    <div class="ab-finance-btn-row">
+                        <button class="ab-finance-btn primary" id="ab-finance-refresh">
+                            <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                            Refresh
+                        </button>
+                        <button class="ab-finance-btn" id="ab-finance-open">
+                            <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                            Finance
+                        </button>
+                    </div>
+                    ${statusDisplay}
+                </div>
+            `;
+
+            widget.querySelector("#ab-finance-toggle").onclick = () => {
+                const s = FinanceManager.readState();
+                s.collapsed = !s.collapsed;
+                FinanceManager.writeState(s);
+                widget.classList.toggle("ab-finance-collapsed", s.collapsed);
+                widget.classList.toggle("ab-finance-expanded", !s.collapsed);
+                const icon = s.collapsed
+                    ? `<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>`
+                    : `<svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>`;
+                widget.querySelector("#ab-finance-toggle").innerHTML = icon;
+            };
+
+            widget.querySelector("#ab-finance-close").onclick = () => {
+                const s = FinanceManager.readState();
+                s.closed = true;
+                FinanceManager.writeState(s);
+                widget.classList.add("ab-finance-hidden");
+            };
+
+            widget.querySelector("#ab-finance-period").onchange = (e) => {
+                const s = FinanceManager.readState();
+                s.period = e.target.value;
+                FinanceManager.writeState(s);
+            };
+
+            widget.querySelector("#ab-finance-refresh").onclick = () => App.handleFinanceRefresh();
+
+            widget.querySelector("#ab-finance-open").onclick = () => {
+                window.open(CONFIG.FINANCE_URL, "_blank");
+            };
+        },
+
+        _initFinanceDrag: (widget) => {
+            const handle = widget.querySelector("#ab-finance-drag-handle");
+            if (!handle) return;
+            let isDragging = false;
+            let startX, startY, origX, origY;
+
+            const onMouseMove = (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const newX = origX + (e.clientX - startX);
+                const newY = origY + (e.clientY - startY);
+                widget.style.left = newX + "px";
+                widget.style.top = newY + "px";
+                widget.style.bottom = "auto";
+            };
+
+            const onMouseUp = () => {
+                if (!isDragging) return;
+                isDragging = false;
+                handle.style.cursor = "grab";
+                const rect = widget.getBoundingClientRect();
+                const s = FinanceManager.readState();
+                s.x = rect.left;
+                s.y = rect.top;
+                FinanceManager.writeState(s);
+                document.removeEventListener("mousemove", onMouseMove);
+                document.removeEventListener("mouseup", onMouseUp);
+            };
+
+            handle.addEventListener("mousedown", (e) => {
+                if (e.target.closest("button") || e.target.closest("select")) return;
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = widget.getBoundingClientRect();
+                origX = rect.left;
+                origY = rect.top;
+                handle.style.cursor = "grabbing";
+                document.addEventListener("mousemove", onMouseMove);
+                document.addEventListener("mouseup", onMouseUp);
+            });
+        },
+
+        showFinanceWidget: () => {
+            const s = FinanceManager.readState();
+            s.closed = false;
+            FinanceManager.writeState(s);
+            CustomUI.buildFinanceWidget();
+        },
+
+        updateFinanceWidget: () => {
+            const widget = document.getElementById("ab-finance-widget");
+            if (!widget) return;
+            const state = FinanceManager.getCachedState();
+            CustomUI._renderFinanceWidget(widget, state);
+            widget.classList.toggle("ab-finance-collapsed", state.collapsed);
+            widget.classList.toggle("ab-finance-expanded", !state.collapsed);
         }
     };
 
@@ -2109,6 +2564,16 @@ ${errorLines}
             reader.readAsText(file, "UTF-8");
         },
 
+        handleFinanceRefresh: async () => {
+            const refreshBtn = document.getElementById("ab-finance-refresh");
+            if (refreshBtn) {
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:currentColor;animation:ab-spin 1s linear infinite"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Loading...`;
+            }
+            await FinanceManager.fetchFinanceData(FinanceManager.readState().period);
+            CustomUI.updateFinanceWidget();
+        },
+
         openMenu: async () => {
             const profileKey = await App.getProfile();
             if (!profileKey) return;
@@ -2118,6 +2583,7 @@ ${errorLines}
         start: () => {
             CustomUI.injectCSS();
             CustomUI.initFloatingButton();
+            CustomUI.buildFinanceWidget();
 
             if (!window.__AB_MONITOR_SET__) {
                 window.__AB_MONITOR_SET__ = true;

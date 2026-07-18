@@ -12,3 +12,4 @@
 | 008 | Debug Bundle Export | Done | c2d6331 |
 | 009 | Dashboard Accuracy | Done | 266b7c9 |
 | 010 | Snippet Import | Done | 25fdae3 |
+| 011 | Finance Widget | Done | b02df25 |
