@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.2
+// @version      1.5.3
 // @description  Enterprise-grade management utility for AgencyBooster. LiveReader Phase.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-        DIAGNOSTICS_VERSION: "1.5.2",
+        DIAGNOSTICS_VERSION: "1.5.3",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -785,6 +785,118 @@ ${diagObj["ERROR LOG"]["Status"] ? `Status              : ${diagObj["ERROR LOG"]
 Recent errors:
 ${errorLines}
 =======================================`;
+        },
+        exportDebugBundle: (profileKey, allProfiles) => {
+            const live = LiveReader.readAll(profileKey);
+            const data = StorageManager.readProfile(profileKey) || {};
+            const id = profileKey ? profileKey.replace(CONFIG.STORAGE_PREFIX, "") : "";
+            const chromeMatch = navigator.userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
+            const totalStorageSize = StorageManager.calculateTotalUsage();
+            const profileSize = new Blob([JSON.stringify(data)]).size;
+            const backupCount = Diagnostics._countBackups();
+            const domMetrics = DOMScanner.scanDOMMetrics();
+            const isProfileValid = Validator.isValidProfile(data);
+            const loadedModules = Diagnostics._detectLoadedModules();
+            const isSenderRunning = !SenderManager.isStopped();
+            const recentErrors = Logger.getRecentErrors();
+
+            const ibMsgCount = data.messages ? Object.keys(data.messages).length : 0;
+            const brMsgCount = data.broadcast?.messages ? Object.keys(data.broadcast.messages).length : 0;
+
+            const lastError = recentErrors.length > 0 ? recentErrors[recentErrors.length - 1] : null;
+
+            return {
+                meta: {
+                    bundleVersion: "1.0",
+                    generatedAt: Utils.getTimestamp(),
+                    generator: "AgencyBooster Debug Bundle",
+                    abVersion: CONFIG.DIAGNOSTICS_VERSION,
+                    userscriptVersion: CONFIG.SNAPSHOT_VERSION
+                },
+                system: {
+                    abVersion: `v${CONFIG.DIAGNOSTICS_VERSION}`,
+                    userscriptVersion: `v${CONFIG.SNAPSHOT_VERSION}`,
+                    url: Utils.getCurrentURL(),
+                    browser: chromeMatch ? `Chrome ${chromeMatch[1]}` : "Other",
+                    userAgent: navigator.userAgent,
+                    viewport: `${window.innerWidth}x${window.innerHeight}`,
+                    platform: navigator.platform || CONFIG.TEXT.UNKNOWN,
+                    cookieEnabled: navigator.cookieEnabled,
+                    online: navigator.onLine
+                },
+                profile: {
+                    id: id || null,
+                    key: profileKey || null,
+                    valid: isProfileValid,
+                    privateMessages: ibMsgCount,
+                    broadcastMessages: brMsgCount,
+                    chainProgress: data.chainProgress ? Object.keys(data.chainProgress).length : 0,
+                    delivered: data.delivered ? data.delivered.split(';').filter(Boolean).length : 0,
+                    sended: data.sended ? data.sended.split(';').filter(Boolean).length : 0,
+                    status: data.status || null,
+                    broadcastStatus: data.broadcast?.status || null
+                },
+                storage: {
+                    usageBytes: totalStorageSize,
+                    usageKB: +(totalStorageSize / CONFIG.BYTES_PER_KB).toFixed(2),
+                    limitMB: +(CONFIG.MAX_STORAGE_WARNING_BYTES / CONFIG.BYTES_PER_KB / CONFIG.BYTES_PER_KB).toFixed(1),
+                    usedPercent: +((totalStorageSize / CONFIG.MAX_STORAGE_WARNING_BYTES) * 100).toFixed(1),
+                    health: totalStorageSize < CONFIG.MAX_STORAGE_WARNING_BYTES ? "ok" : "warning",
+                    profileSizeBytes: profileSize,
+                    profileSizeKB: +(profileSize / CONFIG.BYTES_PER_KB).toFixed(2),
+                    backupCount: backupCount,
+                    totalProfiles: allProfiles.length,
+                    allProfiles: allProfiles,
+                    localStorageKeys: (() => { try { return localStorage.length; } catch { return null; } })()
+                },
+                dom: {
+                    startButton: live.startBtn.value,
+                    startButtonSource: live.startBtn.source,
+                    stopButton: live.stopBtn.value,
+                    stopButtonSource: live.stopBtn.source,
+                    dashboardOpen: !!document.querySelector(".ab-modal"),
+                    senderWindow: window === window.top ? "top" : "iframe",
+                    iceBreakerLoaded: ibMsgCount > 0,
+                    broadcastLoaded: brMsgCount > 0,
+                    accessibleDocs: domMetrics.docsCount,
+                    accessibleIframes: domMetrics.accessibleIframes,
+                    blockedIframes: domMetrics.blockedIframes,
+                    shadowRoots: domMetrics.shadowRoots,
+                    buttonsScanned: domMetrics.buttonsScanned
+                },
+                runtime: {
+                    senderRunning: isSenderRunning,
+                    ibStatus: live.ibStatus.value,
+                    brStatus: live.brStatus.value,
+                    ibDelay: live.privDelay.value,
+                    brDelay: live.broadDelay.value,
+                    dashboardPollMs: CONFIG.DASHBOARD_POLL_MS,
+                    buttonPollMs: CONFIG.BUTTON_POLL_MS,
+                    stopWaitMs: CONFIG.MAX_WAIT_MS,
+                    stopTicks: CONFIG.REQUIRED_STOP_TICKS,
+                    defaultDelay: CONFIG.DEFAULT_DELAY,
+                    loadedModules: loadedModules,
+                    moduleCount: loadedModules.length,
+                    uiHooksOk: live.startBtn.value || live.stopBtn.value,
+                    profileValid: isProfileValid,
+                    overallHealth: isProfileValid && (live.startBtn.value || live.stopBtn.value) ? "healthy" : "attention_required"
+                },
+                liveReader: {
+                    ibStatus: { value: live.ibStatus.value, source: live.ibStatus.source, confidence: live.ibStatus.confidence },
+                    brStatus: { value: live.brStatus.value, source: live.brStatus.source, confidence: live.brStatus.confidence },
+                    privDelay: { value: live.privDelay.value, source: live.privDelay.source, confidence: live.privDelay.confidence },
+                    broadDelay: { value: live.broadDelay.value, source: live.broadDelay.source, confidence: live.broadDelay.confidence },
+                    ibInProgress: { value: live.ibInProgress.value, source: live.ibInProgress.source, confidence: live.ibInProgress.confidence },
+                    ibCompleted: { value: live.ibCompleted.value, source: live.ibCompleted.source, confidence: live.ibCompleted.confidence },
+                    brInProgress: { value: live.brInProgress.value, source: live.brInProgress.source, confidence: live.brInProgress.confidence },
+                    brCompleted: { value: live.brCompleted.value, source: live.brCompleted.source, confidence: live.brCompleted.confidence }
+                },
+                errors: {
+                    count: recentErrors.length,
+                    lastError: lastError ? { message: lastError.message, detail: lastError.detail, timestamp: lastError.timestamp } : null,
+                    history: recentErrors.map((err) => ({ timestamp: err.timestamp, message: err.message, detail: err.detail }))
+                }
+            };
         }
     };
 
@@ -1549,6 +1661,7 @@ ${errorLines}
             let html = `<div style="display:flex; gap:10px; margin-bottom:16px;">
                 <button class="ab-btn primary" id="ab-copy-report">Copy Report</button>
                 <button class="ab-btn" id="ab-copy-json">Copy JSON</button>
+                <button class="ab-btn" id="ab-copy-bundle">Copy Debug Bundle</button>
             </div>`;
 
             for (const [groupName, groupData] of Object.entries(diagObj)) {
@@ -1556,7 +1669,7 @@ ${errorLines}
                     <div class="ab-diag-group">
                         <h3>${groupName}</h3>
                         <table class="ab-table"><tbody>
-                            ${Object.entries(groupData).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}
+                            ${Object.entries(groupData).map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === "object" ? JSON.stringify(v) : v}</td></tr>`).join("")}
                         </tbody></table>
                     </div>
                 `;
@@ -1574,6 +1687,14 @@ ${errorLines}
             document.getElementById("ab-copy-json").onclick = () => {
                 navigator.clipboard.writeText(JSON.stringify(diagObj, null, 2)).then(() => {
                     CustomUI.showToast("JSON copied to clipboard!");
+                });
+            };
+
+            document.getElementById("ab-copy-bundle").onclick = () => {
+                const bundle = Diagnostics.exportDebugBundle(CustomUI.activeProfileKey, allProfiles);
+                const bundleStr = JSON.stringify(bundle, null, 2);
+                navigator.clipboard.writeText(bundleStr).then(() => {
+                    CustomUI.showToast("Debug bundle copied to clipboard!");
                 });
             };
         },

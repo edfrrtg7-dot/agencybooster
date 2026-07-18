@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.3
+
+Debug Bundle Export — structured diagnostic data export.
+
+- Added `Diagnostics.exportDebugBundle()` returning structured JSON with meta, system, profile, storage, dom, runtime, liveReader, errors sections
+- Bundle uses machine-readable values (numbers, booleans, arrays) instead of display strings
+- Added "Copy Debug Bundle" button to Diagnostics UI alongside existing Copy Report and Copy JSON
+- Bundle includes LiveReader source/confidence metadata per field
+- Bundle includes error history with timestamps
+- Diagnostics view now renders nested objects as JSON in the table
+- Dashboard and LiveReader behavior unchanged
+- Version bumped from 1.5.2 to 1.5.3
+
 ## v1.5.2
 
 Diagnostics Expansion — detailed runtime and environment data.
