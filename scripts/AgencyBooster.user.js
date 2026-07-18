@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.7
-// @description  Enterprise-grade management utility for AgencyBooster. Dashboard & Finance stabilized.
+// @version      1.6.0
+// @description  Enterprise-grade management utility for AgencyBooster. Runtime mapping, reset system, dashboard recovery.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.5.7",
+            DIAGNOSTICS_VERSION: "1.6.0",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -52,12 +52,25 @@
             IMPORT_EMPTY: "Error: No valid snippets found.",
             FILE_READ_ERROR: "Failed to read the file.",
             BACKUP_FAILED: "Backup failed: storage is full. Old backups were removed, but there is still not enough space.",
-            IMPORT_JSON_INVALID: "Invalid JSON structure. Expected {\"private\": [...], \"broadcast\": [...]} or a flat array of snippets.",
             IMPORT_CANCELLED: "Import cancelled. No changes were made.",
-            IMPORT_UNSUPPORTED: "Unsupported file type. Please select a .txt or .json file."
+            IMPORT_UNSUPPORTED: "Unsupported file type. Please select a .txt file."
         },
         FINANCE_STORAGE_PREFIX: "agencybooster-finance-",
-        FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 300 }
+        FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 300 },
+        RUNTIME_MAP: {
+            ibStatus:     { label: "IceBreaker Status",    provider: "localStorage", objectPath: "data.status",                   confidence: "high" },
+            brStatus:     { label: "Broadcast Status",     provider: "localStorage", objectPath: "data.broadcast.status",         confidence: "high" },
+            privDelay:    { label: "Private Delay",        provider: "localStorage", objectPath: "data.messages[id].intervalSeconds", confidence: "high" },
+            broadDelay:   { label: "Broadcast Delay",      provider: "localStorage", objectPath: "data.broadcast.messages[id].intervalSeconds", confidence: "high" },
+            ibInProgress: { label: "IceBreaker InProgress", provider: "localStorage", objectPath: "Object.keys(data.chainProgress).length", confidence: "high" },
+            ibCompleted:  { label: "IceBreaker Completed",  provider: "localStorage", objectPath: "data.sended.split(';').length",  confidence: "high" },
+            brInProgress: { label: "Broadcast InProgress",  provider: "localStorage", objectPath: "data.broadcast.chainProgress ? Object.keys(data.broadcast.chainProgress).length : 0", confidence: "high" },
+            brCompleted:  { label: "Broadcast Completed",   provider: "localStorage", objectPath: "data.broadcast.sended ? data.broadcast.sended.split(';').length : 0", confidence: "high" },
+            startBtn:     { label: "Start Button",          provider: "DOM",          selector: "button[id*='start'], input[value*='start']", confidence: "high" },
+            stopBtn:      { label: "Stop Button",           provider: "DOM",          selector: "button[id*='stop'], input[value*='stop']",  confidence: "high" },
+            credits:      { label: "Credits",               provider: "DOM",          selector: "[class*='credit'], [class*='balance'], [data-field='credits']", confidence: "medium" },
+            transactions: { label: "Transactions",          provider: "DOM",          selector: "table tbody tr, .transaction-row",  confidence: "medium" }
+        }
     };
 
     // 3. MODULES WITH STRICT PUBLIC APIS
@@ -407,7 +420,12 @@
     };
 
     const ResetManager = {
+        _lastReset: null,
+        _lastResetType: null,
+        _lastResetDuration: null,
+
         resetIceBreaker: (data) => {
+            const startTime = performance.now();
             const chain = data.chainProgress || {};
             const cleanChain = {};
             if (typeof chain === "object" && !Array.isArray(chain)) {
@@ -420,17 +438,57 @@
             data.chainProgress = cleanChain;
             data.sended = Object.keys(cleanChain).join(";");
             data.status = "stopped";
+            const duration = Math.round(performance.now() - startTime);
+            ResetManager._lastReset = Utils.getTimestamp();
+            ResetManager._lastResetType = "icebreaker";
+            ResetManager._lastResetDuration = duration;
             return true;
         },
+
+        resetBroadcast: (data) => {
+            const startTime = performance.now();
+            if (data.broadcast && typeof data.broadcast === "object") {
+                data.broadcast.chainProgress = {};
+                data.broadcast.sended = "";
+                data.broadcast.status = "stopped";
+            }
+            const duration = Math.round(performance.now() - startTime);
+            ResetManager._lastReset = Utils.getTimestamp();
+            ResetManager._lastResetType = "broadcast";
+            ResetManager._lastResetDuration = duration;
+            return true;
+        },
+
         newShift: (data) => {
+            const startTime = performance.now();
             data.chainProgress = {};
             data.sended = "";
             data.delivered = "";
             data.status = "stopped";
             if (data.broadcast && typeof data.broadcast === "object") {
+                data.broadcast.chainProgress = {};
+                data.broadcast.sended = "";
                 data.broadcast.status = "stopped";
             }
+            const duration = Math.round(performance.now() - startTime);
+            ResetManager._lastReset = Utils.getTimestamp();
+            ResetManager._lastResetType = "new_shift";
+            ResetManager._lastResetDuration = duration;
             return true;
+        },
+
+        getResetStats(data) {
+            const chainSize = data.chainProgress ? Object.keys(data.chainProgress).length : 0;
+            const deliveredCount = data.delivered ? data.delivered.split(';').filter(Boolean).length : 0;
+            const sendedCount = data.sended ? data.sended.split(';').filter(Boolean).length : 0;
+            return {
+                completedCount: sendedCount,
+                inProgressCount: chainSize,
+                deliveredCount: deliveredCount,
+                lastReset: ResetManager._lastReset,
+                lastResetType: ResetManager._lastResetType,
+                lastResetDuration: ResetManager._lastResetDuration
+            };
         }
     };
 
@@ -546,125 +604,26 @@
         _importHistory: [],
         _maxHistory: 10,
 
-        parseJSON: (rawText) => {
-            const result = { private: [], broadcast: [], errors: [] };
-            try {
-                const parsed = JSON.parse(rawText);
-                if (Array.isArray(parsed)) {
-                    for (let i = 0; i < parsed.length; i++) {
-                        const item = parsed[i];
-                        if (typeof item === "string" && item.trim()) {
-                            result.private.push(item.trim());
-                        } else if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
-                            result.private.push(item.text.trim());
-                        } else {
-                            result.errors.push(`Row ${i + 1}: invalid snippet format`);
-                        }
-                    }
-                    return result;
-                }
-                if (parsed && typeof parsed === "object") {
-                    if (Array.isArray(parsed.private)) {
-                        for (let i = 0; i < parsed.private.length; i++) {
-                            const item = parsed.private[i];
-                            if (typeof item === "string" && item.trim()) {
-                                result.private.push(item.trim());
-                            } else if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
-                                result.private.push(item.text.trim());
-                            } else {
-                                result.errors.push(`private[${i + 1}]: invalid snippet format`);
-                            }
-                        }
-                    }
-                    if (Array.isArray(parsed.broadcast)) {
-                        for (let i = 0; i < parsed.broadcast.length; i++) {
-                            const item = parsed.broadcast[i];
-                            if (typeof item === "string" && item.trim()) {
-                                result.broadcast.push(item.trim());
-                            } else if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
-                                result.broadcast.push(item.text.trim());
-                            } else {
-                                result.errors.push(`broadcast[${i + 1}]: invalid snippet format`);
-                            }
-                        }
-                    }
-                    if (result.private.length === 0 && result.broadcast.length === 0 && result.errors.length === 0) {
-                        result.errors.push(CONFIG.TEXT.IMPORT_JSON_INVALID);
-                    }
-                    return result;
-                }
-                result.errors.push(CONFIG.TEXT.IMPORT_JSON_INVALID);
-            } catch (e) {
-                result.errors.push(`JSON parse error: ${e.message}`);
-            }
-            return result;
-        },
-
         detectFileType: (fileName) => {
             if (!fileName) return "unknown";
             const ext = fileName.split(".").pop().toLowerCase();
-            if (ext === "json") return "json";
             if (ext === "txt") return "txt";
             return "unknown";
         },
 
-        parseFile: (rawText, fileType) => {
-            if (fileType === "json") return SnippetImporter.parseJSON(rawText);
-            if (fileType === "txt") return SnippetManager.parseText(rawText);
-            return { private: [], broadcast: [], errors: [CONFIG.TEXT.IMPORT_UNSUPPORTED] };
+        parseFile: (rawText) => {
+            return SnippetManager.parseText(rawText);
         },
 
-        _getExistingTexts: (messages) => {
-            if (!messages || typeof messages !== "object") return new Set();
-            const texts = new Set();
-            const textProp = SnippetManager.detectTextProperty(messages);
-            for (const msg of Object.values(messages)) {
-                if (msg && typeof msg === "object" && typeof msg[textProp] === "string") {
-                    texts.add(msg[textProp].trim());
-                }
-            }
-            return texts;
-        },
-
-        detectDuplicates: (parsed, existingData) => {
-            const existingPriv = SnippetImporter._getExistingTexts(existingData?.messages);
-            const existingBroad = SnippetImporter._getExistingTexts(existingData?.broadcast?.messages);
-            const seenPriv = new Set();
-            const seenBroad = new Set();
-            const result = { duplicates: 0, uniquePrivate: [], uniqueBroadcast: [] };
-
-            for (const snippet of parsed.private) {
-                if (existingPriv.has(snippet) || seenPriv.has(snippet)) {
-                    result.duplicates++;
-                } else {
-                    seenPriv.add(snippet);
-                    result.uniquePrivate.push(snippet);
-                }
-            }
-            for (const snippet of parsed.broadcast) {
-                if (existingBroad.has(snippet) || seenBroad.has(snippet)) {
-                    result.duplicates++;
-                } else {
-                    seenBroad.add(snippet);
-                    result.uniqueBroadcast.push(snippet);
-                }
-            }
-            return result;
-        },
-
-        buildPreview: (parsed, deduped, existingData) => {
+        buildPreview: (parsed, existingData) => {
             const existingPrivCount = existingData?.messages ? Object.keys(existingData.messages).length : 0;
             const existingBroadCount = existingData?.broadcast?.messages ? Object.keys(existingData.broadcast.messages).length : 0;
             return {
-                parseErrors: parsed.errors.length,
-                parseErrorDetails: parsed.errors,
                 totalParsed: parsed.private.length + parsed.broadcast.length,
-                duplicatesSkipped: deduped.duplicates,
-                privateWillImport: deduped.uniquePrivate.length,
-                broadcastWillImport: deduped.uniqueBroadcast.length,
+                privateCount: parsed.private.length,
+                broadcastCount: parsed.broadcast.length,
                 existingPrivateCount: existingPrivCount,
-                existingBroadcastCount: existingBroadCount,
-                hasErrors: parsed.errors.length > 0
+                existingBroadcastCount: existingBroadCount
             };
         },
 
@@ -672,8 +631,8 @@
             SnippetImporter._importHistory.push({
                 timestamp: Utils.getTimestamp(),
                 imported: stats.imported,
-                duplicates: stats.duplicates,
-                invalid: stats.invalid,
+                duplicates: 0,
+                invalid: stats.invalid || 0,
                 status: stats.status
             });
             if (SnippetImporter._importHistory.length > SnippetImporter._maxHistory) {
@@ -683,35 +642,23 @@
 
         getImportHistory: () => [...SnippetImporter._importHistory],
 
-        executeImport: async (profileKey, deduped) => {
-            const dPriv = deduped.uniquePrivate;
-            const dBroad = deduped.uniqueBroadcast;
-            const totalToImport = dPriv.length + dBroad.length;
-            if (totalToImport === 0) return { imported: 0, duplicates: 0, invalid: 0, status: "nothing_to_import" };
+        executeImport: async (profileKey, parsed) => {
+            const privSnippets = parsed.private;
+            const broadSnippets = parsed.broadcast;
+            const totalToImport = privSnippets.length + broadSnippets.length;
+            if (totalToImport === 0) return { imported: 0, invalid: 0, status: "nothing_to_import" };
 
             const ok = await StorageManager.runTransaction(profileKey, async (data) => {
-                if (dPriv.length > 0) {
+                if (privSnippets.length > 0) {
                     const privDelay = StateManager.getDelayValue(data, "icebreaker");
                     const dVal = privDelay !== CONFIG.TEXT.UNKNOWN ? privDelay : CONFIG.DEFAULT_DELAY;
-                    const existingTexts = SnippetImporter._getExistingTexts(data.messages);
-                    const existingTextArr = [...existingTexts];
-                    data.messages = SnippetManager.buildMessages(
-                        [...existingTextArr, ...dPriv],
-                        data.messages,
-                        dVal
-                    );
+                    data.messages = SnippetManager.buildMessages(privSnippets, {}, dVal);
                 }
-                if (dBroad.length > 0) {
+                if (broadSnippets.length > 0) {
                     if (!data.broadcast) data.broadcast = {};
                     const brDelay = StateManager.getDelayValue(data, "broadcast");
                     const dVal = brDelay !== CONFIG.TEXT.UNKNOWN ? brDelay : CONFIG.DEFAULT_DELAY;
-                    const existingTexts = SnippetImporter._getExistingTexts(data.broadcast?.messages);
-                    const existingTextArr = [...existingTexts];
-                    data.broadcast.messages = SnippetManager.buildMessages(
-                        [...existingTextArr, ...dBroad],
-                        data.broadcast.messages,
-                        dVal
-                    );
+                    data.broadcast.messages = SnippetManager.buildMessages(broadSnippets, {}, dVal);
                 }
                 return true;
             });
@@ -719,7 +666,6 @@
             const imported = ok ? totalToImport : 0;
             return {
                 imported,
-                duplicates: deduped.duplicates,
                 invalid: 0,
                 status: ok ? "success" : "failed"
             };
@@ -1011,7 +957,8 @@
             return modules;
         },
         getDiagnosticsObj: (profileKey, allProfiles) => {
-            const live = LiveReader.readAll(profileKey);
+            const ctx = DataProvider.refresh(profileKey);
+            const live = ctx.live;
             const data = StorageManager.readProfile(profileKey) || {};
             const id = profileKey ? profileKey.replace(CONFIG.STORAGE_PREFIX, "") : "";
             
@@ -1024,6 +971,7 @@
             const loadedModules = Diagnostics._detectLoadedModules();
             const isSenderRunning = !SenderManager.isStopped();
             const recentErrors = Logger.getRecentErrors();
+            const resetStats = ResetManager.getResetStats(data);
 
             const ibMsgCount = data.messages ? Object.keys(data.messages).length : 0;
             const brMsgCount = data.broadcast?.messages ? Object.keys(data.broadcast.messages).length : 0;
@@ -1035,12 +983,15 @@
             const liveReaderSection = {};
             for (const field of dashboardFields) {
                 const r = live[field];
+                const meta = RuntimeMap.getField(field);
                 liveReaderSection[`${field} value`] = r.value;
                 liveReaderSection[`${field} displayed`] = (field === "privDelay" || field === "broadDelay")
                     ? ((r.value === CONFIG.TEXT.UNKNOWN || r.value === CONFIG.TEXT.NOT_AVAILABLE) ? CONFIG.TEXT.NOT_AVAILABLE : `${r.value} sec`)
                     : r.value;
                 liveReaderSection[`${field} source`] = r.source;
                 liveReaderSection[`${field} confidence`] = r.confidence;
+                liveReaderSection[`${field} provider`] = meta.provider;
+                liveReaderSection[`${field} objectPath`] = meta.objectPath || meta.selector || "N/A";
             }
 
             const storagePercent = totalStorageSize > 0 ? ((totalStorageSize / CONFIG.MAX_STORAGE_WARNING_BYTES) * 100).toFixed(1) : "0.0";
@@ -1096,6 +1047,21 @@
                     "localStorage keys": (() => { try { return localStorage.length; } catch { return CONFIG.TEXT.UNKNOWN; } })()
                 },
                 "LIVE READER": liveReaderSection,
+                "RUNTIME MAP": (() => {
+                    const mapSection = {};
+                    for (const [name, meta] of Object.entries(CONFIG.RUNTIME_MAP)) {
+                        mapSection[name] = `${meta.provider} | ${meta.objectPath || meta.selector || "N/A"} | ${meta.confidence}`;
+                    }
+                    return mapSection;
+                })(),
+                "RESET": {
+                    "Completed count": resetStats.completedCount,
+                    "In Progress count": resetStats.inProgressCount,
+                    "Delivered count": resetStats.deliveredCount,
+                    "Last reset": resetStats.lastReset || "Never",
+                    "Last reset type": resetStats.lastResetType || "N/A",
+                    "Last reset duration": resetStats.lastResetDuration !== null ? `${resetStats.lastResetDuration}ms` : "N/A"
+                },
                 "DOM": {
                     "Start button": live.startBtn.value ? "Detected" : "Not detected",
                     "Stop button": live.stopBtn.value ? "Detected" : "Not detected",
@@ -1152,11 +1118,13 @@
                         "Last refresh": fs.lastRefresh || "Never",
                         "Request duration": fs.lastDuration !== null ? `${fs.lastDuration}ms` : "N/A",
                         "Last request status": fs.lastStatus || "N/A",
+                        "Credits source": fs.parseMethod || "N/A",
+                        "Credits value": fs.credits !== null ? fs.credits : "Not loaded",
+                        "Transactions source": fs.parseMethod || "N/A",
+                        "Parsed rows": Array.isArray(fs.transactions) ? fs.transactions.length : 0,
                         "Parse method": fs.parseMethod || "N/A",
                         "Parse failure": fs.failureReason || "None",
                         "Shift period": shift && shift.start && shift.end ? `${shift.start} — ${shift.end}` : "All Time",
-                        "Credits": fs.credits !== null ? fs.credits : "Not loaded",
-                        "Transactions": Array.isArray(fs.transactions) ? fs.transactions.length : "Not loaded",
                         "Widget collapsed": fs.collapsed ? "Yes" : "No",
                         "Widget visible": fs.closed ? "No" : "Yes"
                     };
@@ -1174,7 +1142,8 @@
         },
         generateTextReport: (profileKey, allProfiles) => {
             const diagObj = Diagnostics.getDiagnosticsObj(profileKey, allProfiles);
-            const live = LiveReader.readAll(profileKey);
+            const ctx = DataProvider.refresh(profileKey);
+            const live = ctx.live;
             const vs = (r) => `${r.value} [${r.source}, ${r.confidence}]`;
             const errors = Logger.getRecentErrors();
 
@@ -1226,7 +1195,12 @@ BR In Progress      : ${vs(live.brInProgress)}
 BR Completed        : ${vs(live.brCompleted)}
 
 ----------------------------------------
-4. STORAGE
+4. RUNTIME MAP
+----------------------------------------
+${Object.entries(diagObj["RUNTIME MAP"]).map(([k, v]) => `${k.padEnd(16)}: ${v}`).join("\n")}
+
+----------------------------------------
+5. STORAGE
 ----------------------------------------
 Usage               : ${diagObj.STORAGE["Storage usage"]} (${diagObj.STORAGE["Storage used %"]} of limit)
 Storage health      : ${diagObj.STORAGE["Storage health"]}
@@ -1237,7 +1211,7 @@ All profiles        : ${diagObj.STORAGE["All profiles"]}
 localStorage keys   : ${diagObj.STORAGE["localStorage keys"]}
 
 ----------------------------------------
-5. DOM
+6. DOM
 ----------------------------------------
 Start button        : ${diagObj.DOM["Start button"]} (${diagObj.DOM["Start button source"]})
 Stop button         : ${diagObj.DOM["Stop button"]} (${diagObj.DOM["Stop button source"]})
@@ -1252,7 +1226,7 @@ Shadow roots        : ${diagObj.DOM["Shadow roots"]}
 Buttons scanned     : ${diagObj.DOM["Buttons scanned"]}
 
 ----------------------------------------
-6. RUNTIME
+7. RUNTIME
 ----------------------------------------
 Sender running      : ${diagObj.RUNTIME["Sender running"]}
 Last IB status      : ${diagObj.RUNTIME["Last known IB status"]}
@@ -1270,7 +1244,7 @@ Profile valid       : ${diagObj.RUNTIME["Profile valid"]}
 Overall health      : ${diagObj.RUNTIME["Overall health"]}
 
 ----------------------------------------
-7. IMPORT HISTORY
+8. IMPORT HISTORY
 ----------------------------------------
 Last import time    : ${diagObj["IMPORT HISTORY"]["Last import time"] || "N/A"}
 Last import status  : ${diagObj["IMPORT HISTORY"]["Last import status"] || "N/A"}
@@ -1280,21 +1254,33 @@ Last invalid        : ${diagObj["IMPORT HISTORY"]["Last invalid count"] ?? "N/A"
 Total imports       : ${diagObj["IMPORT HISTORY"]["Total imports"] ?? 0}
 
 ----------------------------------------
-8. FINANCE
+9. FINANCE
 ----------------------------------------
 Last refresh        : ${diagObj.FINANCE["Last refresh"]}
 Request duration    : ${diagObj.FINANCE["Request duration"]}
 Last request status : ${diagObj.FINANCE["Last request status"]}
+Credits source      : ${diagObj.FINANCE["Credits source"]}
+Credits value       : ${diagObj.FINANCE["Credits value"]}
+Transactions source : ${diagObj.FINANCE["Transactions source"]}
+Parsed rows         : ${diagObj.FINANCE["Parsed rows"]}
 Parse method        : ${diagObj.FINANCE["Parse method"]}
 Parse failure       : ${diagObj.FINANCE["Parse failure"]}
 Shift period        : ${diagObj.FINANCE["Shift period"]}
-Credits             : ${diagObj.FINANCE["Credits"]}
-Transactions        : ${diagObj.FINANCE["Transactions"]}
 Widget collapsed    : ${diagObj.FINANCE["Widget collapsed"]}
 Widget visible      : ${diagObj.FINANCE["Widget visible"]}
 
 ----------------------------------------
-9. ERROR LOG
+10. RESET
+----------------------------------------
+Completed count     : ${diagObj.RESET["Completed count"]}
+In Progress count   : ${diagObj.RESET["In Progress count"]}
+Delivered count     : ${diagObj.RESET["Delivered count"]}
+Last reset          : ${diagObj.RESET["Last reset"]}
+Last reset type     : ${diagObj.RESET["Last reset type"]}
+Last reset duration : ${diagObj.RESET["Last reset duration"]}
+
+----------------------------------------
+11. ERROR LOG
 ----------------------------------------
 Error count         : ${diagObj["ERROR LOG"]["Error count"]}
 ${diagObj["ERROR LOG"]["Status"] ? `Status              : ${diagObj["ERROR LOG"]["Status"]}` : `Last error          : ${diagObj["ERROR LOG"]["Last error message"]}`}
@@ -1303,7 +1289,8 @@ ${errorLines}
 =======================================`;
         },
         exportDebugBundle: (profileKey, allProfiles) => {
-            const live = LiveReader.readAll(profileKey);
+            const ctx = DataProvider.refresh(profileKey);
+            const live = ctx.live;
             const data = StorageManager.readProfile(profileKey) || {};
             const id = profileKey ? profileKey.replace(CONFIG.STORAGE_PREFIX, "") : "";
             const chromeMatch = navigator.userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
@@ -1422,16 +1409,26 @@ ${errorLines}
                         lastRefresh: fs.lastRefresh,
                         lastDuration: fs.lastDuration,
                         lastStatus: fs.lastStatus,
+                        creditsSource: fs.parseMethod || null,
+                        creditsValue: fs.credits,
+                        transactionsSource: fs.parseMethod || null,
+                        parsedRows: Array.isArray(fs.transactions) ? fs.transactions.length : 0,
                         parseMethod: fs.parseMethod || null,
                         failureReason: fs.failureReason || null,
                         shiftPeriod: shift && shift.start && shift.end ? shift : "all",
-                        credits: fs.credits,
-                        transactions: Array.isArray(fs.transactions) ? fs.transactions : [],
                         collapsed: fs.collapsed,
                         closed: fs.closed,
                         position: { x: fs.x, y: fs.y }
                     };
                 })(),
+                runtimeMap: (() => {
+                    const map = {};
+                    for (const [name, meta] of Object.entries(CONFIG.RUNTIME_MAP)) {
+                        map[name] = { provider: meta.provider, objectPath: meta.objectPath || null, selector: meta.selector || null, confidence: meta.confidence };
+                    }
+                    return map;
+                })(),
+                reset: ResetManager.getResetStats(data),
                 errors: {
                     count: recentErrors.length,
                     lastError: lastError ? { message: lastError.message, detail: lastError.detail, timestamp: lastError.timestamp } : null,
@@ -1703,6 +1700,20 @@ ${errorLines}
         }
     };
 
+    const RuntimeMap = {
+        _config: CONFIG.RUNTIME_MAP,
+        getField(name) {
+            return this._config[name] || { label: name, provider: "unknown", objectPath: "N/A", selector: "N/A", confidence: "none" };
+        },
+        getDisplayMeta(name) {
+            const f = this.getField(name);
+            return `${f.provider} | ${f.objectPath || f.selector || "N/A"} | ${f.confidence}`;
+        },
+        getAllFields() {
+            return Object.entries(this._config).map(([key, meta]) => ({ name: key, ...meta }));
+        }
+    };
+
     const SnapshotAPI = {
         collectSystemInfo: () => {
             const chromeMatch = navigator.userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
@@ -1744,7 +1755,7 @@ ${errorLines}
             return DOMScanner.scanDOMMetrics();
         },
         collectStatistics: (profileKey) => {
-            const live = LiveReader.readAll(profileKey);
+            const live = DataProvider.refresh(profileKey).live;
             return {
                 ibStatus: live.ibStatus.value,
                 brStatus: live.brStatus.value,
@@ -2267,7 +2278,7 @@ ${errorLines}
                     Change Delays
                 </button>
                 <div style="border-top:1px solid var(--ab-border); margin: 8px 0;"></div>
-                <input type="file" id="ab-file-import" accept=".txt,.json" style="display:none;" />
+                <input type="file" id="ab-file-import" accept=".txt" style="display:none;" />
                 <button class="ab-btn" id="ab-action-import">
                     <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
                     Import Snippets
@@ -2720,53 +2731,41 @@ ${errorLines}
             const reader = new FileReader();
             reader.onload = async (ev) => {
                 const rawText = ev.target.result;
-                const parsed = SnippetImporter.parseFile(rawText, fileType);
+                const parsed = SnippetImporter.parseFile(rawText);
 
                 if (parsed.private.length === 0 && parsed.broadcast.length === 0) {
-                    const errDetail = parsed.errors.length > 0 ? `<br><br><strong>Errors:</strong><br>${parsed.errors.join("<br>")}` : "";
-                    await CustomUI.showAlert(CONFIG.TEXT.IMPORT_EMPTY + errDetail);
-                    SnippetImporter.recordImport({ imported: 0, duplicates: 0, invalid: parsed.errors.length, status: "empty" });
+                    await CustomUI.showAlert(CONFIG.TEXT.IMPORT_EMPTY);
+                    SnippetImporter.recordImport({ imported: 0, invalid: 0, status: "empty" });
                     return;
                 }
 
                 const existingData = StorageManager.readProfile(pk) || {};
-                const deduped = SnippetImporter.detectDuplicates(parsed, existingData);
-                const preview = SnippetImporter.buildPreview(parsed, deduped, existingData);
+                const preview = SnippetImporter.buildPreview(parsed, existingData);
 
                 const previewLines = [];
-                previewLines.push(`<strong>Import Preview (${fileType.toUpperCase()}):</strong>`);
+                previewLines.push(`<strong>Import Preview (TXT):</strong>`);
                 previewLines.push(``);
-                previewLines.push(`Total parsed: ${preview.totalParsed}`);
-                previewLines.push(`Private to import: ${preview.privateWillImport}`);
-                previewLines.push(`Broadcast to import: ${preview.broadcastWillImport}`);
-                if (preview.duplicatesSkipped > 0) {
-                    previewLines.push(`<span style="color:var(--ab-warning)">Duplicates skipped: ${preview.duplicatesSkipped}</span>`);
-                }
-                if (preview.parseErrors > 0) {
-                    previewLines.push(`<span style="color:var(--ab-danger)">Parse errors: ${preview.parseErrors}</span>`);
-                }
+                previewLines.push(`Private snippets: ${preview.privateCount}`);
+                previewLines.push(`Broadcast snippets: ${preview.broadcastCount}`);
                 previewLines.push(``);
-                previewLines.push(`<strong>Existing:</strong> Private: ${preview.existingPrivateCount} | Broadcast: ${preview.existingBroadcastCount}`);
+                previewLines.push(`<strong>Current:</strong> Private: ${preview.existingPrivateCount} | Broadcast: ${preview.existingBroadcastCount}`);
                 previewLines.push(``);
-                previewLines.push(`Proceed with import?`);
+                previewLines.push(`This will REPLACE all current snippets. Proceed?`);
 
                 const confirmed = await CustomUI.showConfirm(previewLines.join("<br>"));
                 if (!confirmed) {
-                    SnippetImporter.recordImport({ imported: 0, duplicates: deduped.duplicates, invalid: parsed.errors.length, status: "cancelled" });
+                    SnippetImporter.recordImport({ imported: 0, invalid: 0, status: "cancelled" });
                     return;
                 }
 
-                const stats = await SnippetImporter.executeImport(pk, deduped);
-                stats.invalid = parsed.errors.length;
-
+                const stats = await SnippetImporter.executeImport(pk, parsed);
                 SnippetImporter.recordImport(stats);
 
                 if (stats.status === "success") {
                     await CustomUI.showAlert(
                         `<strong>Import Complete:</strong><br>` +
                         `Imported: ${stats.imported}<br>` +
-                        `Duplicates: ${stats.duplicates}<br>` +
-                        `Invalid: ${stats.invalid}`
+                        `Private: ${preview.privateCount} | Broadcast: ${preview.broadcastCount}`
                     );
                 } else {
                     await CustomUI.showAlert(CONFIG.TEXT.OP_FAILED);

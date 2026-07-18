@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.0
+
+Runtime Architecture Stabilization — shared data provider, runtime map, reset system, diagnostics expansion.
+
+- Added `RuntimeMap` module with static field definitions (provider, objectPath, selector, confidence) for all 12 dashboard fields
+- `DataProvider` is now the sole DOM reader — all callers (Diagnostics, SnapshotAPI) updated to use it
+- All direct `LiveReader.readAll` calls outside DataProvider removed — single scan guarantee
+- `ResetManager` refactored: added `resetBroadcast()` method, reset tracking (`_lastReset`, `_lastResetType`, `_lastResetDuration`), `getResetStats()` accessor
+- `resetIceBreaker` fixed: clears chainProgress (private channel only), sended, status; preserves snippets/settings/delays
+- `SnippetImporter` simplified to TXT-only: removed JSON parsing, dedup/append logic; immediate replace-after-confirm
+- `parseFile(rawText)` simplified to plain text splitting by blank lines
+- `executeImport(profileKey, parsed)` replaces snippets directly (no append)
+- File input restricted to `.txt` only
+- Diagnostics expanded: added RUNTIME MAP section with provider/objectPath/confidence per field
+- Diagnostics added RESET section (completed count, in progress count, delivered count, last reset, type, duration)
+- Diagnostics FINANCE section expanded: credits source, transactions source, parsed rows
+- `generateTextReport` updated: 11 sections (was 9), fixed duplicate section numbering
+- `exportDebugBundle` updated: uses DataProvider, includes runtimeMap, reset stats, expanded finance
+- Removed unused `IMPORT_JSON_INVALID` config message
+- Updated unsupported file type message for TXT-only
+- Version bumped to 1.6.0
+
 ## v1.5.7
 
 Dashboard & Finance Architecture Stabilization — shared data layer, finance redesign, performance.
