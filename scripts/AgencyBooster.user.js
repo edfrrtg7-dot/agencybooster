@@ -19,6 +19,7 @@
     // 2. CONFIGURATION (NO MAGIC NUMBERS ANYWHERE ELSE)
     const CONFIG = {
         DEBUG: false,
+        DEBUG_FINANCE: false,
         MAX_WAIT_MS: 5000,
         POLL_INTERVAL_MS: 250,
         BUTTON_POLL_MS: 2000,
@@ -35,7 +36,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.6.0",
+            DIAGNOSTICS_VERSION: "1.6.1",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -58,18 +59,18 @@
         FINANCE_STORAGE_PREFIX: "agencybooster-finance-",
         FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 300 },
         RUNTIME_MAP: {
-            ibStatus:     { label: "IceBreaker Status",    provider: "localStorage", objectPath: "data.status",                   confidence: "high" },
-            brStatus:     { label: "Broadcast Status",     provider: "localStorage", objectPath: "data.broadcast.status",         confidence: "high" },
-            privDelay:    { label: "Private Delay",        provider: "localStorage", objectPath: "data.messages[id].intervalSeconds", confidence: "high" },
+            ibStatus:     { label: "IceBreaker Status",    provider: "localStorage", objectPath: "data.status",                          confidence: "high" },
+            brStatus:     { label: "Broadcast Status",     provider: "localStorage", objectPath: "data.broadcast.status",                confidence: "high" },
+            privDelay:    { label: "Private Delay",        provider: "localStorage", objectPath: "data.messages[id].intervalSeconds",     confidence: "high" },
             broadDelay:   { label: "Broadcast Delay",      provider: "localStorage", objectPath: "data.broadcast.messages[id].intervalSeconds", confidence: "high" },
             ibInProgress: { label: "IceBreaker InProgress", provider: "localStorage", objectPath: "Object.keys(data.chainProgress).length", confidence: "high" },
-            ibCompleted:  { label: "IceBreaker Completed",  provider: "localStorage", objectPath: "data.sended.split(';').length",  confidence: "high" },
-            brInProgress: { label: "Broadcast InProgress",  provider: "localStorage", objectPath: "data.broadcast.chainProgress ? Object.keys(data.broadcast.chainProgress).length : 0", confidence: "high" },
-            brCompleted:  { label: "Broadcast Completed",   provider: "localStorage", objectPath: "data.broadcast.sended ? data.broadcast.sended.split(';').length : 0", confidence: "high" },
+            ibCompleted:  { label: "IceBreaker Completed",  provider: "localStorage", objectPath: "data.sended.split(';').filter(Boolean).length", confidence: "high" },
+            brInProgress: { label: "Broadcast InProgress",  provider: "localStorage", objectPath: "Object.keys(data.broadcast.chainProgress).length", confidence: "high" },
+            brCompleted:  { label: "Broadcast Completed",   provider: "localStorage", objectPath: "data.broadcast.sended.split(';').filter(Boolean).length", confidence: "high" },
             startBtn:     { label: "Start Button",          provider: "DOM",          selector: "button[id*='start'], input[value*='start']", confidence: "high" },
             stopBtn:      { label: "Stop Button",           provider: "DOM",          selector: "button[id*='stop'], input[value*='stop']",  confidence: "high" },
-            credits:      { label: "Credits",               provider: "DOM",          selector: "[class*='credit'], [class*='balance'], [data-field='credits']", confidence: "medium" },
-            transactions: { label: "Transactions",          provider: "DOM",          selector: "table tbody tr, .transaction-row",  confidence: "medium" }
+            credits:      { label: "Credits",               provider: "DOM",          selector: "finance_pending_identification",           confidence: "pending" },
+            transactions: { label: "Transactions",          provider: "DOM",          selector: "finance_pending_identification",           confidence: "pending" }
         }
     };
 
@@ -414,6 +415,22 @@
             const first = items[0][delayProp];
             return typeof first === "number" ? first : CONFIG.TEXT.UNKNOWN;
         },
+        getInProgressCount: (data, moduleType) => {
+            if (!data) return 0;
+            if (moduleType === "broadcast") {
+                return data.broadcast?.chainProgress ? Object.keys(data.broadcast.chainProgress).length : 0;
+            }
+            return data.chainProgress ? Object.keys(data.chainProgress).length : 0;
+        },
+        getCompletedCount: (data, moduleType) => {
+            if (!data) return 0;
+            if (moduleType === "broadcast") {
+                const raw = data.broadcast?.sended || "";
+                return raw.split(';').filter(Boolean).length;
+            }
+            const raw = data.sended || "";
+            return raw.split(';').filter(Boolean).length;
+        },
         isEngineActive: (status) => {
             return status === "Running" || status === "Progress" || status === "Paused";
         }
@@ -427,16 +444,21 @@
         resetIceBreaker: (data) => {
             const startTime = performance.now();
             const chain = data.chainProgress || {};
+            const privateIds = new Set();
             const cleanChain = {};
             if (typeof chain === "object" && !Array.isArray(chain)) {
                 for (const [id, value] of Object.entries(chain)) {
-                    if (value && value.channel !== "private") {
+                    if (value && value.channel === "private") {
+                        privateIds.add(id);
+                    } else if (value) {
                         cleanChain[id] = value;
                     }
                 }
             }
             data.chainProgress = cleanChain;
-            data.sended = Object.keys(cleanChain).join(";");
+            if (data.sended) {
+                data.sended = data.sended.split(';').filter(id => id && !privateIds.has(id)).join(';');
+            }
             data.status = "stopped";
             const duration = Math.round(performance.now() - startTime);
             ResetManager._lastReset = Utils.getTimestamp();
@@ -674,6 +696,21 @@
 
     const FinanceManager = {
         _cache: null,
+        _debugLog: [],
+
+        _debugEntry(type, data) {
+            if (!CONFIG.DEBUG_FINANCE) return;
+            this._debugLog.push({ ts: Utils.getTimestamp(), type, ...data });
+            if (this._debugLog.length > 100) this._debugLog.shift();
+        },
+
+        getDebugLog() {
+            return [...this._debugLog];
+        },
+
+        clearDebugLog() {
+            this._debugLog = [];
+        },
         _SHIFT_KEY: "agencybooster-finance-shift",
 
         _read(key) {
@@ -771,35 +808,43 @@
             let parseMethod = "none";
             let failureReason = null;
 
+            FinanceManager.clearDebugLog();
+            FinanceManager._debugEntry("scan_start", { docCount: docs.length });
+
             try {
                 const result = FinanceManager._parseStructuredTable(docs);
+                FinanceManager._debugEntry("structured_result", { credits: result.credits, txCount: result.transactions.length });
                 if (result.credits !== null || result.transactions.length > 0) {
                     credits = result.credits;
                     transactions = result.transactions;
                     parseMethod = "structured";
                 }
-            } catch (e) { failureReason = "structured: " + e.message; }
+            } catch (e) { failureReason = "structured: " + e.message; FinanceManager._debugEntry("structured_error", { error: e.message }); }
 
             if (parseMethod === "none") {
                 try {
                     const result = FinanceManager._parseDOMSelectors(docs);
+                    FinanceManager._debugEntry("dom_result", { credits: result.credits, txCount: result.transactions.length });
                     if (result.credits !== null || result.transactions.length > 0) {
                         credits = result.credits;
                         transactions = result.transactions;
                         parseMethod = "dom";
                     }
-                } catch (e) { failureReason = "dom: " + e.message; }
+                } catch (e) { failureReason = "dom: " + e.message; FinanceManager._debugEntry("dom_error", { error: e.message }); }
             }
 
             if (parseMethod === "none") {
                 try {
                     const result = FinanceManager._parseTextFallback(docs);
+                    FinanceManager._debugEntry("text_result", { credits: result.credits });
                     if (result.credits !== null) {
                         credits = result.credits;
                         parseMethod = "text";
                     }
-                } catch (e) { failureReason = "text: " + e.message; }
+                } catch (e) { failureReason = "text: " + e.message; FinanceManager._debugEntry("text_error", { error: e.message }); }
             }
+
+            FinanceManager._debugEntry("scan_complete", { credits, txCount: transactions.length, parseMethod, failureReason });
 
             const shift = FinanceManager.getShiftPeriod();
             if (shift && shift.start && shift.end && transactions.length > 0) {
@@ -822,19 +867,27 @@
                         if (creditEl) {
                             const raw = (creditEl.textContent || "").trim();
                             const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
+                            FinanceManager._debugEntry("structured_credit_found", { tag: creditEl.tagName, class: creditEl.className, raw, parsed: num });
                             if (!isNaN(num)) credits = num;
+                        } else {
+                            FinanceManager._debugEntry("structured_credit_miss", { docUrl: doc.location?.href || "unknown" });
                         }
                     }
 
-                    const rows = doc.querySelectorAll("table tbody tr");
-                    for (const row of rows) {
-                        const cells = row.querySelectorAll("td");
-                        if (cells.length < 2) continue;
-                        const texts = Array.from(cells).map(c => (c.textContent || "").trim());
-                        const tx = FinanceManager._parseTransactionCells(texts);
-                        if (tx) transactions.push(tx);
+                    const tables = doc.querySelectorAll("table");
+                    FinanceManager._debugEntry("structured_tables", { count: tables.length });
+                    for (const table of tables) {
+                        const rows = table.querySelectorAll("tbody tr");
+                        FinanceManager._debugEntry("structured_table_rows", { rows: rows.length, cols: rows[0] ? rows[0].querySelectorAll("td").length : 0 });
+                        for (const row of rows) {
+                            const cells = row.querySelectorAll("td");
+                            if (cells.length < 2) continue;
+                            const texts = Array.from(cells).map(c => (c.textContent || "").trim());
+                            const tx = FinanceManager._parseTransactionCells(texts);
+                            if (tx) transactions.push(tx);
+                        }
                     }
-                } catch {}
+                } catch (e) { FinanceManager._debugEntry("structured_doc_error", { error: e.message }); }
                 if (credits !== null && transactions.length > 0) break;
             }
 
@@ -852,11 +905,13 @@
                         if (creditEl) {
                             const raw = (creditEl.textContent || "").trim();
                             const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
+                            FinanceManager._debugEntry("dom_credit_found", { tag: creditEl.tagName, class: creditEl.className, raw, parsed: num });
                             if (!isNaN(num)) credits = num;
                         }
                     }
 
                     const txRows = doc.querySelectorAll(".transaction-row, [class*='transaction']");
+                    FinanceManager._debugEntry("dom_tx_rows", { count: txRows.length });
                     for (const row of txRows) {
                         const cells = row.querySelectorAll("td, .cell, [class*='cell']");
                         if (cells.length < 2) continue;
@@ -864,7 +919,7 @@
                         const tx = FinanceManager._parseTransactionCells(texts);
                         if (tx) transactions.push(tx);
                     }
-                } catch {}
+                } catch (e) { FinanceManager._debugEntry("dom_doc_error", { error: e.message }); }
                 if (credits !== null && transactions.length > 0) break;
             }
 
@@ -878,8 +933,10 @@
                 try { allText.push(doc.body ? doc.body.innerText : ""); } catch {}
             }
             const blob = allText.join("\n");
+            FinanceManager._debugEntry("text_blob_size", { chars: blob.length, docs: allText.length });
             const creditMatch = blob.match(/(?:credits?|balance)\s*[:=]?\s*([\d,.]+)/i);
             if (creditMatch) credits = parseFloat(creditMatch[1].replace(/,/g, ""));
+            FinanceManager._debugEntry("text_credit_match", { match: creditMatch ? creditMatch[0] : null, credits });
             return { credits, transactions: [] };
         },
 
@@ -941,6 +998,7 @@
         _detectLoadedModules: () => {
             const modules = [];
             if (typeof LiveReader !== "undefined") modules.push("LiveReader");
+            if (typeof RuntimeMap !== "undefined") modules.push("RuntimeMap");
             if (typeof SnapshotAPI !== "undefined") modules.push("SnapshotAPI");
             if (typeof SenderManager !== "undefined") modules.push("SenderManager");
             if (typeof StateManager !== "undefined") modules.push("StateManager");
@@ -984,14 +1042,16 @@
             for (const field of dashboardFields) {
                 const r = live[field];
                 const meta = RuntimeMap.getField(field);
+                const hasValue = r.value !== CONFIG.TEXT.NOT_AVAILABLE && r.value !== CONFIG.TEXT.UNKNOWN;
                 liveReaderSection[`${field} value`] = r.value;
                 liveReaderSection[`${field} displayed`] = (field === "privDelay" || field === "broadDelay")
-                    ? ((r.value === CONFIG.TEXT.UNKNOWN || r.value === CONFIG.TEXT.NOT_AVAILABLE) ? CONFIG.TEXT.NOT_AVAILABLE : `${r.value} sec`)
+                    ? (hasValue ? `${r.value} sec` : CONFIG.TEXT.NOT_AVAILABLE)
                     : r.value;
                 liveReaderSection[`${field} source`] = r.source;
                 liveReaderSection[`${field} confidence`] = r.confidence;
                 liveReaderSection[`${field} provider`] = meta.provider;
-                liveReaderSection[`${field} objectPath`] = meta.objectPath || meta.selector || "N/A";
+                liveReaderSection[`${field} path`] = meta.objectPath || meta.selector || "N/A";
+                liveReaderSection[`${field} parse`] = hasValue ? "ok" : "no_data";
             }
 
             const storagePercent = totalStorageSize > 0 ? ((totalStorageSize / CONFIG.MAX_STORAGE_WARNING_BYTES) * 100).toFixed(1) : "0.0";
@@ -1114,7 +1174,7 @@
                 "FINANCE": (() => {
                     const fs = FinanceManager.getCachedState();
                     const shift = FinanceManager.getShiftPeriod();
-                    return {
+                    const finSection = {
                         "Last refresh": fs.lastRefresh || "Never",
                         "Request duration": fs.lastDuration !== null ? `${fs.lastDuration}ms` : "N/A",
                         "Last request status": fs.lastStatus || "N/A",
@@ -1128,6 +1188,14 @@
                         "Widget collapsed": fs.collapsed ? "Yes" : "No",
                         "Widget visible": fs.closed ? "No" : "Yes"
                     };
+                    if (CONFIG.DEBUG_FINANCE) {
+                        const dbg = FinanceManager.getDebugLog();
+                        finSection["Debug log entries"] = dbg.length;
+                        dbg.forEach((entry, i) => {
+                            finSection[`Debug #${i + 1}`] = `[${entry.type}] ${JSON.stringify(entry)}`;
+                        });
+                    }
+                    return finSection;
                 })(),
                 "ERROR LOG": errorSummary,
                 "ERROR HISTORY": recentErrors.length > 0
@@ -1183,7 +1251,7 @@ Broadcast (raw)     : ${diagObj.PROFILE["Broadcast status (raw)"]}
 Valid               : ${diagObj.PROFILE["Valid"]}
 
 ----------------------------------------
-3. DASHBOARD VALUES (LiveReader)
+3. DASHBOARD VALUES (localStorage)
 ----------------------------------------
 IB Status           : ${vs(live.ibStatus)}
 BR Status           : ${vs(live.brStatus)}
@@ -1193,6 +1261,9 @@ IB In Progress      : ${vs(live.ibInProgress)}
 IB Completed        : ${vs(live.ibCompleted)}
 BR In Progress      : ${vs(live.brInProgress)}
 BR Completed        : ${vs(live.brCompleted)}
+
+All dashboard fields read from localStorage (source: profile data).
+All fields have HIGH confidence when data exists.
 
 ----------------------------------------
 4. RUNTIME MAP
@@ -1268,6 +1339,7 @@ Parse failure       : ${diagObj.FINANCE["Parse failure"]}
 Shift period        : ${diagObj.FINANCE["Shift period"]}
 Widget collapsed    : ${diagObj.FINANCE["Widget collapsed"]}
 Widget visible      : ${diagObj.FINANCE["Widget visible"]}
+${CONFIG.DEBUG_FINANCE ? `Debug entries       : ${diagObj.FINANCE["Debug log entries"] || 0}` : `Debug               : disabled (set CONFIG.DEBUG_FINANCE=true to enable)`}
 
 ----------------------------------------
 10. RESET
@@ -1385,14 +1457,14 @@ ${errorLines}
                     overallHealth: isProfileValid && (live.startBtn.value || live.stopBtn.value) ? "healthy" : "attention_required"
                 },
                 liveReader: {
-                    ibStatus: { value: live.ibStatus.value, source: live.ibStatus.source, confidence: live.ibStatus.confidence },
-                    brStatus: { value: live.brStatus.value, source: live.brStatus.source, confidence: live.brStatus.confidence },
-                    privDelay: { value: live.privDelay.value, source: live.privDelay.source, confidence: live.privDelay.confidence },
-                    broadDelay: { value: live.broadDelay.value, source: live.broadDelay.source, confidence: live.broadDelay.confidence },
-                    ibInProgress: { value: live.ibInProgress.value, source: live.ibInProgress.source, confidence: live.ibInProgress.confidence },
-                    ibCompleted: { value: live.ibCompleted.value, source: live.ibCompleted.source, confidence: live.ibCompleted.confidence },
-                    brInProgress: { value: live.brInProgress.value, source: live.brInProgress.source, confidence: live.brInProgress.confidence },
-                    brCompleted: { value: live.brCompleted.value, source: live.brCompleted.source, confidence: live.brCompleted.confidence }
+                    ibStatus: { value: live.ibStatus.value, source: live.ibStatus.source, confidence: live.ibStatus.confidence, provider: "localStorage" },
+                    brStatus: { value: live.brStatus.value, source: live.brStatus.source, confidence: live.brStatus.confidence, provider: "localStorage" },
+                    privDelay: { value: live.privDelay.value, source: live.privDelay.source, confidence: live.privDelay.confidence, provider: "localStorage" },
+                    broadDelay: { value: live.broadDelay.value, source: live.broadDelay.source, confidence: live.broadDelay.confidence, provider: "localStorage" },
+                    ibInProgress: { value: live.ibInProgress.value, source: live.ibInProgress.source, confidence: live.ibInProgress.confidence, provider: "localStorage" },
+                    ibCompleted: { value: live.ibCompleted.value, source: live.ibCompleted.source, confidence: live.ibCompleted.confidence, provider: "localStorage" },
+                    brInProgress: { value: live.brInProgress.value, source: live.brInProgress.source, confidence: live.brInProgress.confidence, provider: "localStorage" },
+                    brCompleted: { value: live.brCompleted.value, source: live.brCompleted.source, confidence: live.brCompleted.confidence, provider: "localStorage" }
                 },
                 importHistory: (() => {
                     const history = SnippetImporter.getImportHistory();
@@ -1418,7 +1490,8 @@ ${errorLines}
                         shiftPeriod: shift && shift.start && shift.end ? shift : "all",
                         collapsed: fs.collapsed,
                         closed: fs.closed,
-                        position: { x: fs.x, y: fs.y }
+                        position: { x: fs.x, y: fs.y },
+                        debugLog: CONFIG.DEBUG_FINANCE ? FinanceManager.getDebugLog() : null
                     };
                 })(),
                 runtimeMap: (() => {
@@ -1440,10 +1513,8 @@ ${errorLines}
 
     const LiveReader = {
         SOURCES: {
-            DOM_DIRECT: "dom_direct",
-            DOM_STRUCTURED: "dom_structured",
             LOCAL_STORAGE: "local_storage",
-            DOM_TEXT: "dom_text",
+            DOM_DIRECT: "dom_direct",
             UNKNOWN: "unknown"
         },
         CONFIDENCE: {
@@ -1459,136 +1530,7 @@ ${errorLines}
             raw: raw !== undefined ? raw : value
         }),
         _unknownResult: () => LiveReader._makeResult(CONFIG.TEXT.NOT_AVAILABLE, LiveReader.SOURCES.UNKNOWN, LiveReader.CONFIDENCE.NONE),
-        _textFallbackRegex: /(?:status|delay|in\s*progress|completed)\s*[:=]\s*([^\n<]{1,60})/gi,
-        _findLabeledValue: (docs, labelVariants) => {
-            for (const doc of docs) {
-                try {
-                    const allElements = doc.querySelectorAll("span, div, td, p, label, strong, b, em, h1, h2, h3, h4, h5, h6, input, textarea");
-                    for (const el of allElements) {
-                        const text = (el.textContent || "").trim();
-                        for (const variant of labelVariants) {
-                            const lowerText = text.toLowerCase();
-                            const lowerVariant = variant.toLowerCase();
-                            if (lowerText.startsWith(lowerVariant)) {
-                                const after = text.substring(variant.length).replace(/^[\s:=]+/, "").trim();
-                                if (after.length > 0 && after.length < 80) return after;
-                            }
-                        }
-                        const label = el.previousElementSibling || el.parentElement;
-                        if (label) {
-                            const labelText = (label.textContent || "").trim().toLowerCase();
-                            for (const variant of labelVariants) {
-                                if (labelText.includes(variant.toLowerCase())) {
-                                    const val = text.replace(/^[\s:=]+/, "").trim();
-                                    if (val.length > 0 && val.length < 80) return val;
-                                }
-                            }
-                        }
-                    }
-                } catch {}
-            }
-            return null;
-        },
-        _extractNumber: (raw) => {
-            if (raw === null || raw === undefined) return null;
-            const str = String(raw).trim();
-            const num = parseInt(str, 10);
-            return isNaN(num) ? null : num;
-        },
-        _resolveStatus: (raw) => {
-            if (!raw) return null;
-            const s = raw.toLowerCase();
-            if (s.includes("running")) return "Running";
-            if (s.includes("stopped") || s.includes("stop")) return "Stopped";
-            if (s.includes("progress")) return "Progress";
-            if (s.includes("paused") || s.includes("pause")) return "Paused";
-            return null;
-        },
-        _resolveDelay: (raw) => {
-            if (!raw) return null;
-            const cleaned = raw.replace(/[^\d.]/g, "");
-            const num = parseFloat(cleaned);
-            return isNaN(num) ? null : num;
-        },
-        _providerDOMDirect: (docs) => {
-            const result = {};
-            const tryFind = (selectors, transform) => {
-                for (const doc of docs) {
-                    try {
-                        for (const sel of selectors) {
-                            const el = doc.querySelector(sel);
-                            if (el) {
-                                const raw = (el.value !== undefined ? el.value : el.textContent || "").trim();
-                                return transform ? transform(raw) : raw;
-                            }
-                        }
-                    } catch {}
-                }
-                return null;
-            };
-            result.ibStatus = tryFind(
-                ["[data-module='icebreaker'][data-field='status']", "[data-ib-status]", ".ib-status", "#ib-status"],
-                LiveReader._resolveStatus
-            );
-            result.brStatus = tryFind(
-                ["[data-module='broadcast'][data-field='status']", "[data-br-status]", ".br-status", "#br-status"],
-                LiveReader._resolveStatus
-            );
-            result.privDelay = tryFind(
-                ["[data-module='icebreaker'][data-field='delay']", "[data-ib-delay]", ".ib-delay", "#ib-delay"],
-                LiveReader._resolveDelay
-            );
-            result.broadDelay = tryFind(
-                ["[data-module='broadcast'][data-field='delay']", "[data-br-delay]", ".br-delay", "#br-delay"],
-                LiveReader._resolveDelay
-            );
-            result.ibInProgress = tryFind(
-                ["[data-module='icebreaker'][data-field='inprogress']", "[data-ib-inprogress]", ".ib-inprogress", "#ib-inprogress"],
-                LiveReader._extractNumber
-            );
-            result.ibCompleted = tryFind(
-                ["[data-module='icebreaker'][data-field='completed']", "[data-ib-completed]", ".ib-completed", "#ib-completed"],
-                LiveReader._extractNumber
-            );
-            result.brInProgress = tryFind(
-                ["[data-module='broadcast'][data-field='inprogress']", "[data-br-inprogress]", ".br-inprogress", "#br-inprogress"],
-                LiveReader._extractNumber
-            );
-            result.brCompleted = tryFind(
-                ["[data-module='broadcast'][data-field='completed']", "[data-br-completed]", ".br-completed", "#br-completed"],
-                LiveReader._extractNumber
-            );
-            return result;
-        },
-        _providerDOMStructured: (docs) => {
-            const result = {};
-            result.ibStatus = LiveReader._resolveStatus(
-                LiveReader._findLabeledValue(docs, ["IceBreaker Status", "IB Status", "Private Status"])
-            );
-            result.brStatus = LiveReader._resolveStatus(
-                LiveReader._findLabeledValue(docs, ["Broadcast Status", "BR Status", "Group Status"])
-            );
-            result.privDelay = LiveReader._resolveDelay(
-                LiveReader._findLabeledValue(docs, ["Private Delay", "IB Delay", "IceBreaker Delay", "Private Interval"])
-            );
-            result.broadDelay = LiveReader._resolveDelay(
-                LiveReader._findLabeledValue(docs, ["Broadcast Delay", "BR Delay", "Group Delay", "Broadcast Interval"])
-            );
-            result.ibInProgress = LiveReader._extractNumber(
-                LiveReader._findLabeledValue(docs, ["IB In Progress", "IceBreaker In Progress", "Private In Progress", "IB Progressing"])
-            );
-            result.ibCompleted = LiveReader._extractNumber(
-                LiveReader._findLabeledValue(docs, ["IB Completed", "IceBreaker Completed", "Private Completed", "IB Done"])
-            );
-            result.brInProgress = LiveReader._extractNumber(
-                LiveReader._findLabeledValue(docs, ["BR In Progress", "Broadcast In Progress", "Group In Progress", "BR Progressing"])
-            );
-            result.brCompleted = LiveReader._extractNumber(
-                LiveReader._findLabeledValue(docs, ["BR Completed", "Broadcast Completed", "Group Completed", "BR Done"])
-            );
-            return result;
-        },
-        _providerLocalStorage: (profileKey) => {
+        _readLocalStorage: (profileKey) => {
             const data = StorageManager.readProfile(profileKey) || {};
             const isSenderStopped = SenderManager.isStopped();
 
@@ -1599,71 +1541,27 @@ ${errorLines}
             const broadRaw = StateManager.getDelayValue(data, "broadcast");
 
             return {
-                ibStatus: ibRaw !== CONFIG.TEXT.UNKNOWN ? ibStatus : null,
-                brStatus: brRaw !== CONFIG.TEXT.UNKNOWN ? brRaw : null,
-                privDelay: privRaw !== CONFIG.TEXT.UNKNOWN ? privRaw : null,
-                broadDelay: broadRaw !== CONFIG.TEXT.UNKNOWN ? broadRaw : null,
-                ibInProgress: StateManager.getExactCount(data, "ibInProgress") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "ibInProgress") : null,
-                ibCompleted: StateManager.getExactCount(data, "ibCompleted") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "ibCompleted") : null,
-                brInProgress: StateManager.getExactCount(data, "brInProgress") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "brInProgress") : null,
-                brCompleted: StateManager.getExactCount(data, "brCompleted") !== CONFIG.TEXT.UNKNOWN ? StateManager.getExactCount(data, "brCompleted") : null
+                ibStatus: ibStatus,
+                brStatus: brRaw,
+                privDelay: privRaw,
+                broadDelay: broadRaw,
+                ibInProgress: StateManager.getInProgressCount(data, "icebreaker"),
+                ibCompleted: StateManager.getCompletedCount(data, "icebreaker"),
+                brInProgress: StateManager.getInProgressCount(data, "broadcast"),
+                brCompleted: StateManager.getCompletedCount(data, "broadcast")
             };
         },
-        _providerDOMText: (docs) => {
-            const result = {};
-            const allText = [];
-            for (const doc of docs) {
-                try {
-                    allText.push(doc.body ? doc.body.innerText : "");
-                } catch {}
-            }
-            const blob = allText.join("\n");
-            const matches = [];
-            let m;
-            const re = new RegExp(LiveReader._textFallbackRegex.source, "gi");
-            while ((m = re.exec(blob)) !== null) {
-                matches.push({ label: m[0].split(/[\s:=]/)[0].toLowerCase(), raw: m[1].trim() });
-            }
-            for (const match of matches) {
-                const label = match.label;
-                if (!result.ibStatus && (label.includes("icebreaker") || label.includes("ib") || label.includes("private")) && label.includes("status")) {
-                    result.ibStatus = LiveReader._resolveStatus(match.raw);
-                } else if (!result.brStatus && (label.includes("broadcast") || label.includes("br") || label.includes("group")) && label.includes("status")) {
-                    result.brStatus = LiveReader._resolveStatus(match.raw);
-                } else if (!result.privDelay && (label.includes("icebreaker") || label.includes("ib") || label.includes("private")) && label.includes("delay")) {
-                    result.privDelay = LiveReader._resolveDelay(match.raw);
-                } else if (!result.broadDelay && (label.includes("broadcast") || label.includes("br") || label.includes("group")) && label.includes("delay")) {
-                    result.broadDelay = LiveReader._resolveDelay(match.raw);
-                }
-            }
-            return result;
-        },
-        _mergeField: (providers, field) => {
-            const order = [
-                { data: providers.domDirect, source: LiveReader.SOURCES.DOM_DIRECT, confidence: LiveReader.CONFIDENCE.HIGH },
-                { data: providers.domStructured, source: LiveReader.SOURCES.DOM_STRUCTURED, confidence: LiveReader.CONFIDENCE.MEDIUM },
-                { data: providers.localStorage, source: LiveReader.SOURCES.LOCAL_STORAGE, confidence: LiveReader.CONFIDENCE.LOW },
-                { data: providers.domText, source: LiveReader.SOURCES.DOM_TEXT, confidence: LiveReader.CONFIDENCE.LOW }
-            ];
-            for (const { data, source, confidence } of order) {
-                if (data[field] !== null && data[field] !== undefined) {
-                    return LiveReader._makeResult(data[field], source, confidence);
-                }
-            }
-            return LiveReader._unknownResult();
-        },
-        readAll: (profileKey, docs) => {
-            if (!docs) docs = DOMManager.getAccessibleDocuments(window);
-            const providers = {
-                domDirect: LiveReader._providerDOMDirect(docs),
-                domStructured: LiveReader._providerDOMStructured(docs),
-                localStorage: LiveReader._providerLocalStorage(profileKey),
-                domText: LiveReader._providerDOMText(docs)
-            };
+        readAll: (profileKey) => {
+            const ls = LiveReader._readLocalStorage(profileKey);
             const fields = ["ibStatus", "brStatus", "privDelay", "broadDelay", "ibInProgress", "ibCompleted", "brInProgress", "brCompleted"];
             const result = {};
             for (const field of fields) {
-                result[field] = LiveReader._mergeField(providers, field);
+                const val = ls[field];
+                if (val !== null && val !== undefined && val !== CONFIG.TEXT.UNKNOWN) {
+                    result[field] = LiveReader._makeResult(val, LiveReader.SOURCES.LOCAL_STORAGE, LiveReader.CONFIDENCE.HIGH);
+                } else {
+                    result[field] = LiveReader._unknownResult();
+                }
             }
             const startBtnFound = !!DOMManager.findButton(CONFIG.SELECTORS.START);
             const stopBtnFound = !!DOMManager.findButton(CONFIG.SELECTORS.STOP);
@@ -1689,7 +1587,7 @@ ${errorLines}
                 return this._cache;
             }
             const docs = DOMManager.getAccessibleDocuments(window);
-            const live = LiveReader.readAll(profileKey, docs);
+            const live = LiveReader.readAll(profileKey);
             this._cache = { live, docs, timestamp: Utils.getTimestamp() };
             this._cacheTimestamp = Date.now();
             return this._cache;

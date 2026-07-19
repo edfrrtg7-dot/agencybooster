@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.1
+
+Runtime Source Repair — verified data sources, removed fake DOM selectors, fixed reset behavior.
+
+- **Fixed**: `StateManager.getInProgressCount(data, moduleType)` — correctly computes from `data.chainProgress` (IceBreaker) or `data.broadcast.chainProgress` (Broadcast)
+- **Fixed**: `StateManager.getCompletedCount(data, moduleType)` — correctly computes from `data.sended` or `data.broadcast.sended` split-by-semicolon
+- **Removed**: `LiveReader._providerDOMDirect` — deleted entirely (guessed selectors never matched GoldenBride DOM)
+- **Removed**: `LiveReader._providerDOMStructured` — deleted entirely (guessed label variants)
+- **Removed**: `LiveReader._providerDOMText` — deleted entirely (regex text matching)
+- **Removed**: `LiveReader._mergeField` — no longer needed (single source)
+- **Removed**: `LiveReader._findLabeledValue`, `_extractNumber`, `_resolveStatus`, `_resolveDelay` — no longer needed
+- **Simplified**: `LiveReader.readAll` — reads only from localStorage, always HIGH confidence; `startBtn`/`stopBtn` still from DOM
+- **Fixed**: `ResetManager.resetIceBreaker` — now properly filters private IDs from `sended` string instead of reconstructing from `chainProgress` (preserves non-private completed IDs)
+- **Added**: `CONFIG.DEBUG_FINANCE` flag for temporary finance debug mode
+- **Added**: `FinanceManager._debugLog` — logs every DOM scan step when DEBUG_FINANCE is enabled (selectors tried, matched elements, table structure, parse results)
+- **Added**: `FinanceManager.getDebugLog()` / `clearDebugLog()` accessors
+- **Updated**: `CONFIG.RUNTIME_MAP` — finance fields marked as `confidence: "pending"` (selectors need real verification)
+- **Updated**: Diagnostics LIVE READER section — added `parse` status per field (ok/no_data)
+- **Updated**: Diagnostics FINANCE section — includes debug log entries when DEBUG_FINANCE enabled
+- **Updated**: Text report — section title changed to "(localStorage)", added source summary
+- **Updated**: Debug bundle — liveReader entries include `provider: "localStorage"`, finance includes `debugLog`
+- **Updated**: `_detectLoadedModules` — added RuntimeMap to module list
+- Version bumped to 1.6.1
+
 ## v1.6.0
 
 Runtime Architecture Stabilization — shared data provider, runtime map, reset system, diagnostics expansion.
