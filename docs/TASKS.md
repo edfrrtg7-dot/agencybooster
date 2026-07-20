@@ -18,3 +18,4 @@
 | 014 | Runtime Source Repair | Done | a7e7839 |
 | 016 | Reset IceBreaker — clear delivered field | Done | ab76414 |
 | 017 | Document Sender Storage Model | Done | ff6d059 |
+| 018 | Companion UI & Branding Improvements | Done | (pending) |

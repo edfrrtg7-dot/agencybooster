@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.0
+
+Companion UI & Branding Improvements — resizable Finance widget, launcher relocation, application identity.
+
+- **Added**: Finance widget is now resizable via bottom-right corner handle; dimensions persist across reloads
+- **Added**: `CONFIG.FINANCE_WIDGET_SIZE` expanded with `MIN_WIDTH`, `MIN_HEIGHT`, `MAX_WIDTH`, `MAX_HEIGHT` bounds
+- **Added**: `CONFIG.COMPANION_STORAGE_PREFIX` for Companion-specific storage
+- **Added**: `CustomUI._initFinanceResize()` — resize handler with min/max clamping and live layout updates
+- **Added**: `CustomUI._readTab()` / `_writeTab()` — tab persistence via localStorage
+- **Changed**: Finance widget default size: 360×380px (was 280×300px)
+- **Changed**: Finance widget position persistence removed — always opens at default location
+- **Changed**: Launcher moved from bottom-right to top-right
+- **Changed**: Window title renamed from "AgencyBooster Manager" to "AgencyBooster Companion"
+- **Changed**: Diagnostics SYSTEM section: "Userscript Version" renamed to "AgencyBooster Companion"
+- **Changed**: Companion grid icon now used in both launcher and window header
+- **Changed**: Active tab restored automatically after reopening Companion
+- **Changed**: UI polish — header padding, tab font weight, card border-radius, button styling
+- **Updated**: Export debug bundle and SnapshotAPI field names (`userscriptVersion` → `companionVersion`)
+- Version bumped to 1.7.0
+
 ## v1.6.2
 
 Reset IceBreaker — clear `delivered` field during reset to restore original AgencyBooster sender state.

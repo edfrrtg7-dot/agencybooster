@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AgencyBooster Manager
+// @name         AgencyBooster Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.6.2
+// @version      1.7.0
 // @description  Enterprise-grade management utility for AgencyBooster. Runtime mapping, reset system, dashboard recovery.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -36,7 +36,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.6.2",
+            DIAGNOSTICS_VERSION: "1.7.0",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -57,7 +57,8 @@
             IMPORT_UNSUPPORTED: "Unsupported file type. Please select a .txt file."
         },
         FINANCE_STORAGE_PREFIX: "agencybooster-finance-",
-        FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 300 },
+        FINANCE_WIDGET_SIZE: { WIDTH: 360, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 380, MIN_WIDTH: 280, MIN_HEIGHT: 120, MAX_WIDTH: 600, MAX_HEIGHT: 600 },
+        COMPANION_STORAGE_PREFIX: "agencybooster-companion-",
         RUNTIME_MAP: {
             ibStatus:     { label: "IceBreaker Status",    provider: "localStorage", objectPath: "data.status",                          confidence: "high" },
             brStatus:     { label: "Broadcast Status",     provider: "localStorage", objectPath: "data.broadcast.status",                confidence: "high" },
@@ -732,8 +733,8 @@
 
         getDefaultState() {
             return {
-                x: null,
-                y: null,
+                width: null,
+                height: null,
                 collapsed: false,
                 closed: false,
                 lastRefresh: null,
@@ -1073,7 +1074,7 @@
             return {
                 "SYSTEM": {
                     "AgencyBooster Version": `v${CONFIG.DIAGNOSTICS_VERSION}`,
-                    "Userscript Version": `v${CONFIG.SNAPSHOT_VERSION}`,
+                    "AgencyBooster Companion": `v${CONFIG.SNAPSHOT_VERSION}`,
                     "Browser": chromeMatch ? `Chrome ${chromeMatch[1]}` : "Other",
                     "URL": Utils.getCurrentURL(),
                     "Timestamp": Utils.getTimestamp(),
@@ -1231,7 +1232,7 @@ Generated on        : ${diagObj.SYSTEM["Timestamp"]}
 1. SYSTEM
 ----------------------------------------
 AB Version          : ${diagObj.SYSTEM["AgencyBooster Version"]}
-Userscript Version  : ${diagObj.SYSTEM["Userscript Version"]}
+AgencyBooster Companion: ${diagObj.SYSTEM["AgencyBooster Companion"]}
 Browser             : ${diagObj.SYSTEM["Browser"]}
 URL                 : ${diagObj.SYSTEM["URL"]}
 Viewport            : ${diagObj.SYSTEM["Viewport"]}
@@ -1389,11 +1390,11 @@ ${errorLines}
                     generatedAt: Utils.getTimestamp(),
                     generator: "AgencyBooster Debug Bundle",
                     abVersion: CONFIG.DIAGNOSTICS_VERSION,
-                    userscriptVersion: CONFIG.SNAPSHOT_VERSION
+                    companionVersion: CONFIG.SNAPSHOT_VERSION
                 },
                 system: {
                     abVersion: `v${CONFIG.DIAGNOSTICS_VERSION}`,
-                    userscriptVersion: `v${CONFIG.SNAPSHOT_VERSION}`,
+                    companionVersion: `v${CONFIG.SNAPSHOT_VERSION}`,
                     url: Utils.getCurrentURL(),
                     browser: chromeMatch ? `Chrome ${chromeMatch[1]}` : "Other",
                     userAgent: navigator.userAgent,
@@ -1619,7 +1620,7 @@ ${errorLines}
         collectSystemInfo: () => {
             const chromeMatch = navigator.userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
             return {
-                scriptVersion: CONFIG.SNAPSHOT_VERSION,
+                companionVersion: CONFIG.SNAPSHOT_VERSION,
                 timestamp: Utils.getTimestamp(),
                 currentURL: Utils.getCurrentURL(),
                 browser: chromeMatch ? `Chrome ${chromeMatch[1]}` : "Other",
@@ -1683,6 +1684,19 @@ ${errorLines}
         overlay: null,
         activeProfileKey: null,
         dashboardInterval: null,
+
+        _readTab() {
+            try {
+                const raw = localStorage.getItem(CONFIG.COMPANION_STORAGE_PREFIX + "active-tab");
+                return raw || null;
+            } catch { return null; }
+        },
+
+        _writeTab(tab) {
+            try {
+                localStorage.setItem(CONFIG.COMPANION_STORAGE_PREFIX + "active-tab", tab);
+            } catch {}
+        },
         
         injectCSS: () => {
             if (document.getElementById("ab-styles")) return;
@@ -1711,7 +1725,7 @@ ${errorLines}
 
                 #ab-floating-btn {
                     position: fixed; 
-                    bottom: 24px; 
+                    top: 24px; 
                     right: 24px; 
                     width: ${CONFIG.BUTTON_SIZE_PX}px; 
                     height: ${CONFIG.BUTTON_SIZE_PX}px; 
@@ -1760,33 +1774,33 @@ ${errorLines}
                 .ab-modal.small { width: 320px; }
 
                 .ab-header {
-                    padding: 16px 20px; border-bottom: 1px solid var(--ab-border);
+                    padding: 18px 22px; border-bottom: 1px solid var(--ab-border);
                     display: flex; justify-content: space-between; align-items: center;
                     background: rgba(255,255,255,0.02);
                 }
-                .ab-header h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;}
+                .ab-header h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; letter-spacing: -0.2px; }
                 .ab-close-icon { cursor: pointer; opacity: 0.7; transition: opacity 0.2s; display:flex; }
                 .ab-close-icon:hover { opacity: 1; }
                 .ab-close-icon svg { width: 20px; height: 20px; fill: var(--ab-text); }
 
                 .ab-tabs { display: flex; border-bottom: 1px solid var(--ab-border); background: rgba(0,0,0,0.2); }
-                .ab-tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ab-text-dim); border-bottom: 2px solid transparent; transition: all 0.2s; user-select: none; }
+                .ab-tab { flex: 1; padding: 12px 8px; text-align: center; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ab-text-dim); border-bottom: 2px solid transparent; transition: all 0.2s; user-select: none; letter-spacing: 0.2px; }
                 .ab-tab:hover { color: var(--ab-text); background: rgba(255,255,255,0.03); }
-                .ab-tab.active { color: var(--ab-accent); border-bottom-color: var(--ab-accent); background: rgba(59,130,246,0.1); }
+                .ab-tab.active { color: var(--ab-accent); border-bottom-color: var(--ab-accent); background: rgba(59,130,246,0.1); font-weight: 600; }
 
                 .ab-content { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; max-height: 65vh; }
                 .ab-content::-webkit-scrollbar { width: 6px; }
                 .ab-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
 
                 .ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-                .ab-card { background: var(--ab-bg-card); border: 1px solid var(--ab-border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+                .ab-card { background: var(--ab-bg-card); border: 1px solid var(--ab-border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
                 .ab-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ab-text-dim); }
                 .ab-card-value { font-size: 15px; font-weight: 600; color: var(--ab-text); }
                 
                 .ab-btn {
                     background: rgba(255,255,255,0.05); color: var(--ab-text); border: 1px solid var(--ab-border);
-                    padding: 10px 14px; border-radius: 6px; cursor: pointer; text-align: center; 
-                    transition: all 0.2s; font-size: 13px; font-weight: 500; width: 100%; 
+                    padding: 10px 14px; border-radius: 8px; cursor: pointer; text-align: center; 
+                    transition: all 0.2s; font-size: 13px; font-weight: 500; width: 100%; letter-spacing: 0.1px;
                     display: flex; align-items: center; justify-content: center; gap: 8px; outline: none;
                 }
                 .ab-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
@@ -1813,28 +1827,30 @@ ${errorLines}
                 .ab-table td { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); word-break: break-all; }
                 .ab-table td:first-child { color: var(--ab-text-dim); width: 45%; }
                 
-                .ab-toast { position: fixed; bottom: 80px; right: 20px; background: var(--ab-success); color: white; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 500; z-index: ${CONFIG.OVERLAY_Z_INDEX_BASE}; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: ab-slide-up 0.3s forwards; }
+                .ab-toast { position: fixed; bottom: 20px; right: 20px; background: var(--ab-success); color: white; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 500; z-index: ${CONFIG.OVERLAY_Z_INDEX_BASE}; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: ab-slide-up 0.3s forwards; }
 
                 #ab-finance-widget {
                     position: fixed; bottom: 24px; left: 24px;
-                    width: ${CONFIG.FINANCE_WIDGET_SIZE.WIDTH}px;
                     background: var(--ab-bg); border: 1px solid var(--ab-border);
                     border-radius: 10px; z-index: ${CONFIG.MODAL_Z_INDEX - 1};
                     font-family: var(--ab-font); color: var(--ab-text);
                     box-shadow: 0 8px 32px 0 rgba(0,0,0,0.5);
                     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
                     user-select: none; display: flex; flex-direction: column;
-                    transition: height 0.25s ease, opacity 0.2s ease;
+                    transition: opacity 0.2s ease; overflow: hidden;
                 }
                 #ab-finance-widget.ab-finance-hidden { display: none; }
                 #ab-finance-widget.ab-finance-collapsed {
                     height: ${CONFIG.FINANCE_WIDGET_SIZE.COLLAPSED_HEIGHT}px;
                     overflow: hidden;
                 }
-                #ab-finance-widget.ab-finance-expanded {
-                    height: ${CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT}px;
-                    overflow: hidden;
+                #ab-finance-resize-handle {
+                    position: absolute; bottom: 0; right: 0;
+                    width: 16px; height: 16px; cursor: nwse-resize;
+                    background: linear-gradient(135deg, transparent 50%, var(--ab-text-dim) 50%);
+                    opacity: 0.3; border-radius: 0 0 10px 0; z-index: 1;
                 }
+                #ab-finance-resize-handle:hover { opacity: 0.6; }
                 .ab-finance-header {
                     display: flex; align-items: center; justify-content: space-between;
                     padding: 8px 12px; cursor: grab; border-bottom: 1px solid var(--ab-border);
@@ -2056,24 +2072,31 @@ ${errorLines}
                 <div class="ab-modal large">
                     <div class="ab-header">
                         <h2>
-                            <svg style="width:20px;height:20px;fill:var(--ab-accent);" viewBox="0 0 24 24"><path d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"/></svg>
-                            AgencyBooster Manager <span style="font-size:12px;color:var(--ab-text-dim);font-weight:normal;margin-left:8px;">[v${CONFIG.DIAGNOSTICS_VERSION} - ${profileKey.replace(CONFIG.STORAGE_PREFIX, "")}]</span>
+                            <svg style="width:20px;height:20px;fill:var(--ab-accent);" viewBox="0 0 24 24"><path d="M4 13h6c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v8c0 .55.45 1 1 1zm0 8h6c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1zm10 0h6c.55 0 1-.45 1-1v-8c0-.55-.45-1-1-1h-6c-.55 0-1 .45-1 1v8c0 .55.45 1 1 1zM13 4v4c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1h-6c-.55 0-1 .45-1 1z"/></svg>
+                            AgencyBooster Companion <span style="font-size:12px;color:var(--ab-text-dim);font-weight:normal;margin-left:8px;">[v${CONFIG.DIAGNOSTICS_VERSION} - ${profileKey.replace(CONFIG.STORAGE_PREFIX, "")}]</span>
                         </h2>
                         <div class="ab-close-icon" id="ab-main-close">
                             <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                         </div>
                     </div>
                     <div class="ab-tabs">
-                        <div class="ab-tab active" data-target="dashboard">Dashboard</div>
+                        <div class="ab-tab" data-target="dashboard">Dashboard</div>
                         <div class="ab-tab" data-target="manager">Manager</div>
                         <div class="ab-tab" data-target="diagnostics">Diagnostics</div>
                     </div>
                     
-                    <div id="ab-view-dashboard" class="ab-content"></div>
+                    <div id="ab-view-dashboard" class="ab-content" style="display:none;"></div>
                     <div id="ab-view-manager" class="ab-content" style="display:none;"></div>
                     <div id="ab-view-diagnostics" class="ab-content" style="display:none;"></div>
                 </div>
             `;
+
+            const savedTab = CustomUI._readTab();
+            const validTabs = ["dashboard", "manager", "diagnostics"];
+            const initialTab = validTabs.includes(savedTab) ? savedTab : "dashboard";
+            const initialTabEl = overlay.querySelector(`.ab-tab[data-target="${initialTab}"]`);
+            if (initialTabEl) initialTabEl.classList.add("active");
+            document.getElementById(`ab-view-${initialTab}`).style.display = 'flex';
 
             const tabs = overlay.querySelectorAll(".ab-tab");
             tabs.forEach(tab => {
@@ -2087,6 +2110,7 @@ ${errorLines}
                     
                     const target = tab.getAttribute("data-target");
                     document.getElementById(`ab-view-${target}`).style.display = 'flex';
+                    CustomUI._writeTab(target);
                     
                     if (target === 'dashboard') CustomUI.updateDashboard();
                     if (target === 'diagnostics') CustomUI.buildDiagnosticsView(allProfiles);
@@ -2283,15 +2307,26 @@ ${errorLines}
             widget.id = "ab-finance-widget";
             widget.classList.add(state.collapsed ? "ab-finance-collapsed" : "ab-finance-expanded");
 
-            if (state.x !== null && state.y !== null) {
-                widget.style.left = state.x + "px";
-                widget.style.top = state.y + "px";
-                widget.style.bottom = "auto";
+            if (!state.collapsed) {
+                const w = state.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH;
+                const h = state.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
+                widget.style.width = w + "px";
+                widget.style.height = h + "px";
+            } else {
+                widget.style.width = (state.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH) + "px";
             }
 
             CustomUI._renderFinanceWidget(widget, state);
+
+            if (!state.collapsed) {
+                const handle = document.createElement("div");
+                handle.id = "ab-finance-resize-handle";
+                widget.appendChild(handle);
+            }
+
             DOMManager.appendBody(widget);
             CustomUI._initFinanceDrag(widget);
+            if (!state.collapsed) CustomUI._initFinanceResize(widget);
         },
 
         _renderFinanceWidget: (widget, state) => {
@@ -2395,6 +2430,21 @@ ${errorLines}
                     ? `<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>`
                     : `<svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>`;
                 widget.querySelector("#ab-finance-toggle").innerHTML = icon;
+                if (!s.collapsed) {
+                    const h = s.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
+                    widget.style.height = h + "px";
+                    const existingHandle = widget.querySelector("#ab-finance-resize-handle");
+                    if (!existingHandle) {
+                        const handle = document.createElement("div");
+                        handle.id = "ab-finance-resize-handle";
+                        widget.appendChild(handle);
+                        CustomUI._initFinanceResize(widget);
+                    }
+                } else {
+                    widget.style.height = "";
+                    const existingHandle = widget.querySelector("#ab-finance-resize-handle");
+                    if (existingHandle) existingHandle.remove();
+                }
             };
 
             widget.querySelector("#ab-finance-close").onclick = () => {
@@ -2434,11 +2484,6 @@ ${errorLines}
                 if (!isDragging) return;
                 isDragging = false;
                 handle.style.cursor = "grab";
-                const rect = widget.getBoundingClientRect();
-                const s = FinanceManager.readState();
-                s.x = rect.left;
-                s.y = rect.top;
-                FinanceManager.writeState(s);
                 document.removeEventListener("mousemove", onMouseMove);
                 document.removeEventListener("mouseup", onMouseUp);
             };
@@ -2452,6 +2497,50 @@ ${errorLines}
                 origX = rect.left;
                 origY = rect.top;
                 handle.style.cursor = "grabbing";
+                document.addEventListener("mousemove", onMouseMove);
+                document.addEventListener("mouseup", onMouseUp);
+            });
+        },
+
+        _initFinanceResize: (widget) => {
+            const handle = widget.querySelector("#ab-finance-resize-handle");
+            if (!handle) return;
+            let isResizing = false;
+            let startX, startY, startW, startH;
+
+            const onMouseMove = (e) => {
+                if (!isResizing) return;
+                e.preventDefault();
+                const deltaW = e.clientX - startX;
+                const deltaH = e.clientY - startY;
+                const newW = Math.min(CONFIG.FINANCE_WIDGET_SIZE.MAX_WIDTH, Math.max(CONFIG.FINANCE_WIDGET_SIZE.MIN_WIDTH, startW + deltaW));
+                const newH = Math.min(CONFIG.FINANCE_WIDGET_SIZE.MAX_HEIGHT, Math.max(CONFIG.FINANCE_WIDGET_SIZE.MIN_HEIGHT, startH + deltaH));
+                widget.style.width = newW + "px";
+                widget.style.height = newH + "px";
+            };
+
+            const onMouseUp = () => {
+                if (!isResizing) return;
+                isResizing = false;
+                handle.style.cursor = "nwse-resize";
+                const rect = widget.getBoundingClientRect();
+                const s = FinanceManager.readState();
+                s.width = Math.round(rect.width);
+                s.height = Math.round(rect.height);
+                FinanceManager.writeState(s);
+                document.removeEventListener("mousemove", onMouseMove);
+                document.removeEventListener("mouseup", onMouseUp);
+            };
+
+            handle.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                isResizing = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = widget.getBoundingClientRect();
+                startW = rect.width;
+                startH = rect.height;
+                handle.style.cursor = "nwse-resize";
                 document.addEventListener("mousemove", onMouseMove);
                 document.addEventListener("mouseup", onMouseUp);
             });
@@ -2529,6 +2618,25 @@ ${errorLines}
             CustomUI._renderFinanceWidget(widget, state);
             widget.classList.toggle("ab-finance-collapsed", state.collapsed);
             widget.classList.toggle("ab-finance-expanded", !state.collapsed);
+
+            const w = state.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH;
+            widget.style.width = w + "px";
+            if (!state.collapsed) {
+                const h = state.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
+                widget.style.height = h + "px";
+            } else {
+                widget.style.height = "";
+            }
+
+            const existingHandle = widget.querySelector("#ab-finance-resize-handle");
+            if (!state.collapsed && !existingHandle) {
+                const handle = document.createElement("div");
+                handle.id = "ab-finance-resize-handle";
+                widget.appendChild(handle);
+                CustomUI._initFinanceResize(widget);
+            } else if (state.collapsed && existingHandle) {
+                existingHandle.remove();
+            }
         }
     };
 
