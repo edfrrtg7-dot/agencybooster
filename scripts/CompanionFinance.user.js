@@ -780,8 +780,10 @@
   };
 
   // ../src/companion/brand-logo.ts
-  var COMPANION_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 505 494" fill="none">
-  <path d="M2175 4453 c-132 -21 -369 -81 -453 -114 -402 -159 -744 -435 -977 -789 -135 -205 -251 -468 -296 -670 -4 -19 -14 -66 -23 -105 -35 -153 -52 -408 -37 -551 47 -444 167 -752 431 -1109 115 -155 392 -405 538 -486 27 -14 66 -37 88 -51 167 -102 460 -196 741 -237 92 -14 363 -14 473 -1 115 14 233 41 223 50 -4 5 -87 10 -183 13 -163 4 -184 7 -309 42 -276 76 -447 169 -656 358 -49 45 -103 97 -120 116 -16 19 -37 42 -46 51 -19 20 -149 214 -149 223 0 4 -18 36 -40 72 -22 36 -40 70 -40 75 0 6 -4 10 -8 10 -5 0 -9 6 -10 13 -1 6 -19 64 -41 128 -36 106 -79 267 -96 364 -21 116 -10 419 20 572 14 70 73 267 95 318 116 270 267 484 454 644 217 185 473 315 730 369 108 23 144 26 331 27 185 0 223 -3 315 -23 234 -53 435 -132 648 -256 63 -37 92 -48 123 -48 78 1 172 66 183 127 10 53 -31 111 -194 276 -152 153 -210 200 -340 275 -36 21 -68 43 -72 48 -5 7 -8 7 -8 1 0 -6 -3 -6 -8 1 -22 32 -233 135 -363 177 -95 31 -190 54 -369 88 -99 18 -447 20 -555 2z" transform="translate(0,494) scale(0.1,-0.1)" fill="#2F6BFF"/>
+  var COMPANION_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 505 494">
+  <g transform="translate(0,494) scale(0.1,-0.1)" fill="#2F6BFF" stroke="none">
+    <path d="M2175 4453 c-132 -21 -369 -81 -453 -114 -402 -159 -744 -435 -977 -789 -135 -205 -251 -468 -296 -670 -4 -19 -14 -66 -23 -105 -35 -153 -52 -408 -37 -551 47 -444 167 -752 431 -1109 115 -155 392 -405 538 -486 27 -14 66 -37 88 -51 167 -102 460 -196 741 -237 92 -14 363 -14 473 -1 115 14 233 41 223 50 -4 5 -87 10 -183 13 -163 4 -184 7 -309 42 -276 76 -447 169 -656 358 -49 45 -103 97 -120 116 -16 19 -37 42 -46 51 -19 20 -149 214 -149 223 0 4 -18 36 -40 72 -22 36 -40 70 -40 75 0 6 -4 10 -8 10 -5 0 -9 6 -10 13 -1 6 -19 64 -41 128 -36 106 -79 267 -96 364 -21 116 -10 419 20 572 14 70 73 267 95 318 116 270 267 484 454 644 217 185 473 315 730 369 108 23 144 26 331 27 185 0 223 -3 315 -23 234 -53 435 -132 648 -256 63 -37 92 -48 123 -48 78 1 172 66 183 127 10 53 -31 111 -194 276 -152 153 -210 200 -340 275 -36 21 -68 43 -72 48 -5 7 -8 7 -8 1 0 -6 -3 -6 -8 1 -22 32 -233 135 -363 177 -95 31 -190 54 -369 88 -99 18 -447 20 -555 2z"/>
+  </g>
 </svg>`;
   var COMPANION_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(COMPANION_LOGO_SVG)}`;
 
@@ -791,7 +793,32 @@
   var MIN_HEIGHT = 200;
   var MAX_WIDTH = 700;
   var MAX_HEIGHT = 600;
-  var COLLAPSED_HEIGHT = 48;
+  var STORAGE_KEY2 = "ab-finance-widget-state";
+  var DEFAULT_STATE = {
+    x: 24,
+    y: 24,
+    width: 360,
+    height: 380,
+    collapsed: false
+  };
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY2);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null && typeof parsed.x === "number" && typeof parsed.y === "number" && typeof parsed.width === "number" && typeof parsed.height === "number" && typeof parsed.collapsed === "boolean") {
+        return parsed;
+      }
+    } catch {
+    }
+    return null;
+  }
+  function saveState(state) {
+    try {
+      localStorage.setItem(STORAGE_KEY2, JSON.stringify(state));
+    } catch {
+    }
+  }
   var FinanceWidget = class {
     constructor(controller, config = {}) {
       __publicField(this, "controller");
@@ -810,8 +837,10 @@
       __publicField(this, "collapsed", false);
       __publicField(this, "visible", true);
       // Saved size for restore after collapse
-      __publicField(this, "savedWidth", 360);
-      __publicField(this, "savedHeight", 380);
+      __publicField(this, "savedWidth", DEFAULT_STATE.width);
+      __publicField(this, "savedHeight", DEFAULT_STATE.height);
+      // Keyboard handler
+      __publicField(this, "boundOnKeyDown", null);
       // Drag state
       __publicField(this, "isDragging", false);
       __publicField(this, "dragStartX", 0);
@@ -828,6 +857,13 @@
       __publicField(this, "resizeOrigH", 0);
       __publicField(this, "boundOnResizePointerMove", null);
       __publicField(this, "boundOnResizePointerUp", null);
+      __publicField(this, "onKeyDown", (e) => {
+        if (this.destroyed || !this.visible) return;
+        if (e.key === "Escape") {
+          this.hide();
+          this.onClose?.();
+        }
+      });
       // -------------------------------------------------------------------------
       // State rendering
       // -------------------------------------------------------------------------
@@ -880,6 +916,7 @@
             header.style.cursor = "grab";
           }
         }
+        this.persistState();
         this.removeDragListeners();
       });
       // -------------------------------------------------------------------------
@@ -916,20 +953,23 @@
       });
       __publicField(this, "onResizePointerUp", () => {
         this.isResizing = false;
+        this.persistState();
         this.removeResizeListeners();
       });
       __publicField(this, "onCollapseClick", () => {
         if (this.destroyed) return;
-        if (this.collapsed) {
-          this.expand();
-        } else {
-          this.collapse();
-        }
+        this.toggleCollapse();
       });
       __publicField(this, "onCloseClick", () => {
         if (this.destroyed) return;
         this.hide();
         this.onClose?.();
+      });
+      __publicField(this, "onHeaderDoubleClick", (e) => {
+        if (this.destroyed) return;
+        const target = e.target;
+        if (target.closest("button")) return;
+        this.toggleCollapse();
       });
       __publicField(this, "onRefreshClick", () => {
         if (this.destroyed) return;
@@ -959,6 +999,10 @@
       this.container = config.container ?? document.body;
       this.classPrefix = config.classPrefix ?? DEFAULT_CLASS_PREFIX;
       this.onClose = config.onClose;
+      const saved = loadState() ?? DEFAULT_STATE;
+      this.savedWidth = saved.width;
+      this.savedHeight = saved.height;
+      this.collapsed = saved.collapsed;
       this.unsubscribe = this.controller.subscribe(this.onStateChange);
       this.render(this.controller.getState());
       this.controller.refresh();
@@ -974,6 +1018,7 @@
       this.controller.cancelPending();
       this.removeDragListeners();
       this.removeResizeListeners();
+      this.removeKeyboardListener();
       this.root?.remove();
       this.root = null;
       this.refreshBtn = null;
@@ -992,12 +1037,14 @@
       if (this.destroyed || !this.root) return;
       this.visible = true;
       this.root.style.display = "";
+      this.installKeyboardListener();
     }
     /** Hide the widget (close). */
     hide() {
       if (this.destroyed || !this.root) return;
       this.visible = false;
       this.root.style.display = "none";
+      this.removeKeyboardListener();
     }
     /** Check if widget is visible. */
     get isVisible() {
@@ -1016,8 +1063,9 @@
       this.root.style.height = this.savedHeight + "px";
       this.contentEl.style.display = "";
       this.updateCollapseButton();
+      this.persistState();
     }
-    /** Collapse the widget. */
+    /** Collapse the widget to compact title bar. */
     collapse() {
       if (this.collapsed || !this.root || !this.contentEl) return;
       const rect = this.root.getBoundingClientRect();
@@ -1025,9 +1073,45 @@
       this.savedHeight = rect.height;
       this.collapsed = true;
       this.root.classList.add(`${this.classPrefix}-collapsed`);
-      this.root.style.height = COLLAPSED_HEIGHT + "px";
       this.contentEl.style.display = "none";
       this.updateCollapseButton();
+      this.persistState();
+    }
+    /** Toggle collapse state. */
+    toggleCollapse() {
+      if (this.collapsed) {
+        this.expand();
+      } else {
+        this.collapse();
+      }
+    }
+    // -------------------------------------------------------------------------
+    // State persistence
+    // -------------------------------------------------------------------------
+    persistState() {
+      if (!this.root) return;
+      const rect = this.root.getBoundingClientRect();
+      saveState({
+        x: rect.left,
+        y: rect.top,
+        width: this.collapsed ? this.savedWidth : rect.width,
+        height: this.collapsed ? this.savedHeight : rect.height,
+        collapsed: this.collapsed
+      });
+    }
+    // -------------------------------------------------------------------------
+    // Keyboard shortcuts
+    // -------------------------------------------------------------------------
+    installKeyboardListener() {
+      if (this.boundOnKeyDown) return;
+      this.boundOnKeyDown = this.onKeyDown;
+      document.addEventListener("keydown", this.boundOnKeyDown);
+    }
+    removeKeyboardListener() {
+      if (this.boundOnKeyDown) {
+        document.removeEventListener("keydown", this.boundOnKeyDown);
+        this.boundOnKeyDown = null;
+      }
     }
     render(state) {
       if (!this.root) {
@@ -1043,9 +1127,17 @@
     // DOM creation
     // -------------------------------------------------------------------------
     createRoot() {
+      const saved = loadState() ?? DEFAULT_STATE;
       const root = document.createElement("div");
       root.className = this.classPrefix;
       root.id = `${this.classPrefix}-widget`;
+      root.style.left = saved.x + "px";
+      root.style.top = saved.y + "px";
+      root.style.bottom = "auto";
+      root.style.right = "auto";
+      if (saved.collapsed) {
+        root.classList.add(`${this.classPrefix}-collapsed`);
+      }
       const dragHandle = document.createElement("div");
       dragHandle.className = `${this.classPrefix}-header`;
       dragHandle.id = `${this.classPrefix}-drag-handle`;
@@ -1055,7 +1147,7 @@
       logo.className = `${this.classPrefix}-logo`;
       logo.innerHTML = COMPANION_LOGO_SVG;
       const titleText = document.createElement("span");
-      titleText.textContent = "Finance";
+      titleText.textContent = "FINANCE";
       title.appendChild(logo);
       title.appendChild(titleText);
       const actions = document.createElement("div");
@@ -1080,7 +1172,7 @@
       const collapseBtn = document.createElement("button");
       collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
       collapseBtn.title = "Collapse";
-      collapseBtn.textContent = "\u25BC";
+      collapseBtn.textContent = this.collapsed ? "\u25B6" : "\u25BC";
       const closeBtn = document.createElement("button");
       closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
       closeBtn.title = "Close";
@@ -1094,6 +1186,9 @@
       dragHandle.appendChild(actions);
       const content = document.createElement("div");
       content.className = `${this.classPrefix}-body`;
+      if (saved.collapsed) {
+        content.style.display = "none";
+      }
       const resizeHandle = document.createElement("div");
       resizeHandle.className = `${this.classPrefix}-resize-handle`;
       root.appendChild(dragHandle);
@@ -1107,12 +1202,14 @@
       this.collapseBtn = collapseBtn;
       this.closeBtn = closeBtn;
       dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
+      dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
       resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
       shiftBtn.addEventListener("click", this.onShiftToggle);
       refreshBtn.addEventListener("click", this.onRefreshClick);
       collapseBtn.addEventListener("click", this.onCollapseClick);
       closeBtn.addEventListener("click", this.onCloseClick);
       this.container.appendChild(root);
+      this.installKeyboardListener();
     }
     removeDragListeners() {
       if (this.boundOnDragPointerMove) {
@@ -1143,7 +1240,7 @@
     // -------------------------------------------------------------------------
     updateCollapseButton() {
       if (!this.collapseBtn) return;
-      this.collapseBtn.textContent = this.collapsed ? "\u25B2" : "\u25BC";
+      this.collapseBtn.textContent = this.collapsed ? "\u25B6" : "\u25BC";
       this.collapseBtn.title = this.collapsed ? "Expand" : "Collapse";
     }
     // -------------------------------------------------------------------------
@@ -1347,26 +1444,31 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: height 0.2s ease;
 }
 
-/* Collapsed state */
+/* Compact collapse \u2014 widget becomes a title bar only */
 .ab-finance.collapsed {
-    min-height: auto;
-    height: 48px !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
 }
 
 .ab-finance.collapsed .ab-finance-body {
-    display: none;
+    display: none !important;
 }
 
 .ab-finance.collapsed .ab-finance-resize-handle {
-    display: none;
+    display: none !important;
 }
 
 .ab-finance.collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
+    min-height: auto;
+    padding: 6px 12px;
 }
 
 /* Resize handle */
@@ -1411,6 +1513,7 @@
     color: rgba(255,255,255,0.5);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
 }
 
 /* Companion Logo */
@@ -1433,6 +1536,7 @@
     gap: 2px;
     align-items: center;
     position: relative;
+    flex-shrink: 0;
 }
 
 .ab-finance-header-actions button {
@@ -1445,8 +1549,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     font-size: 11px;
+    flex-shrink: 0;
 }
 
 .ab-finance-header-actions button:hover {
@@ -1454,9 +1559,20 @@
     background: rgba(255,255,255,0.1);
 }
 
+/* Refresh button hover */
+.ab-finance-header-actions .ab-finance-btn:hover {
+    color: #59AFFF;
+    background: rgba(89,175,255,0.1);
+}
+
 /* Collapse button */
 .ab-finance-collapse-btn {
     font-size: 10px !important;
+}
+
+.ab-finance-collapse-btn:hover {
+    color: #59AFFF !important;
+    background: rgba(89,175,255,0.1) !important;
 }
 
 /* Close button */
@@ -1529,7 +1645,7 @@
     font-size: 10px;
     font-weight: 500;
     text-align: center;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1641,7 +1757,7 @@
     border-radius: 3px;
     font-size: 11px;
     font-weight: 500;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
 }
 
 .ab-finance-shift-btn:hover {
@@ -1683,7 +1799,7 @@
     cursor: pointer;
     text-align: left;
     color: #E0E0E0;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     width: 100%;
 }
 

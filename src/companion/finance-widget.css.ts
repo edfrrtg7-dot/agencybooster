@@ -30,26 +30,31 @@ export const FINANCE_WIDGET_CSS = `
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: height 0.2s ease;
 }
 
-/* Collapsed state */
+/* Compact collapse — widget becomes a title bar only */
 .ab-finance.collapsed {
-    min-height: auto;
-    height: 48px !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
 }
 
 .ab-finance.collapsed .ab-finance-body {
-    display: none;
+    display: none !important;
 }
 
 .ab-finance.collapsed .ab-finance-resize-handle {
-    display: none;
+    display: none !important;
 }
 
 .ab-finance.collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
+    min-height: auto;
+    padding: 6px 12px;
 }
 
 /* Resize handle */
@@ -94,6 +99,7 @@ export const FINANCE_WIDGET_CSS = `
     color: rgba(255,255,255,0.5);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
 }
 
 /* Companion Logo */
@@ -116,6 +122,7 @@ export const FINANCE_WIDGET_CSS = `
     gap: 2px;
     align-items: center;
     position: relative;
+    flex-shrink: 0;
 }
 
 .ab-finance-header-actions button {
@@ -128,8 +135,9 @@ export const FINANCE_WIDGET_CSS = `
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     font-size: 11px;
+    flex-shrink: 0;
 }
 
 .ab-finance-header-actions button:hover {
@@ -137,9 +145,20 @@ export const FINANCE_WIDGET_CSS = `
     background: rgba(255,255,255,0.1);
 }
 
+/* Refresh button hover */
+.ab-finance-header-actions .ab-finance-btn:hover {
+    color: #59AFFF;
+    background: rgba(89,175,255,0.1);
+}
+
 /* Collapse button */
 .ab-finance-collapse-btn {
     font-size: 10px !important;
+}
+
+.ab-finance-collapse-btn:hover {
+    color: #59AFFF !important;
+    background: rgba(89,175,255,0.1) !important;
 }
 
 /* Close button */
@@ -212,7 +231,7 @@ export const FINANCE_WIDGET_CSS = `
     font-size: 10px;
     font-weight: 500;
     text-align: center;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -324,7 +343,7 @@ export const FINANCE_WIDGET_CSS = `
     border-radius: 3px;
     font-size: 11px;
     font-weight: 500;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
 }
 
 .ab-finance-shift-btn:hover {
@@ -366,7 +385,7 @@ export const FINANCE_WIDGET_CSS = `
     cursor: pointer;
     text-align: left;
     color: #E0E0E0;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     width: 100%;
 }
 

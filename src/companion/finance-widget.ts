@@ -6,8 +6,11 @@
  * Includes a shift selector for Morning / Day / Night intervals.
  *
  * Features:
- *   - Collapse/expand (hides content, keeps header)
+ *   - Compact collapse/expand (width shrinks, no empty body)
  *   - Close (hides widget, can be reopened)
+ *   - Double-click header to toggle collapse
+ *   - ESC keyboard shortcut to close
+ *   - State persistence (position, size, collapsed)
  *   - Drag with stable state management
  *   - Resize with min/max bounds
  *   - Smart night shift filtering
@@ -38,6 +41,15 @@ export interface FinanceWidgetConfig {
     readonly onClose?: () => void;
 }
 
+/** Persisted widget state. */
+interface WidgetState {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly collapsed: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -48,7 +60,51 @@ const MIN_WIDTH = 280;
 const MIN_HEIGHT = 200;
 const MAX_WIDTH = 700;
 const MAX_HEIGHT = 600;
-const COLLAPSED_HEIGHT = 48;
+const COLLAPSED_HEIGHT = 44;
+
+const STORAGE_KEY = "ab-finance-widget-state";
+
+const DEFAULT_STATE: WidgetState = {
+    x: 24,
+    y: 24,
+    width: 360,
+    height: 380,
+    collapsed: false,
+};
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+function loadState(): WidgetState | null {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (
+            typeof parsed === "object" &&
+            parsed !== null &&
+            typeof parsed.x === "number" &&
+            typeof parsed.y === "number" &&
+            typeof parsed.width === "number" &&
+            typeof parsed.height === "number" &&
+            typeof parsed.collapsed === "boolean"
+        ) {
+            return parsed as WidgetState;
+        }
+    } catch {
+        // localStorage unavailable or corrupted
+    }
+    return null;
+}
+
+function saveState(state: WidgetState): void {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+        // localStorage full or unavailable
+    }
+}
 
 // ---------------------------------------------------------------------------
 // FinanceWidget
@@ -72,8 +128,11 @@ export class FinanceWidget {
     private visible = true;
 
     // Saved size for restore after collapse
-    private savedWidth = 360;
-    private savedHeight = 380;
+    private savedWidth = DEFAULT_STATE.width;
+    private savedHeight = DEFAULT_STATE.height;
+
+    // Keyboard handler
+    private boundOnKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
     // Drag state
     private isDragging = false;
@@ -99,6 +158,12 @@ export class FinanceWidget {
         this.classPrefix = config.classPrefix ?? DEFAULT_CLASS_PREFIX;
         this.onClose = config.onClose;
 
+        // Load persisted state
+        const saved = loadState() ?? DEFAULT_STATE;
+        this.savedWidth = saved.width;
+        this.savedHeight = saved.height;
+        this.collapsed = saved.collapsed;
+
         this.unsubscribe = this.controller.subscribe(this.onStateChange);
         this.render(this.controller.getState());
         this.controller.refresh();
@@ -116,6 +181,7 @@ export class FinanceWidget {
         this.controller.cancelPending();
         this.removeDragListeners();
         this.removeResizeListeners();
+        this.removeKeyboardListener();
         this.root?.remove();
         this.root = null;
         this.refreshBtn = null;
@@ -136,6 +202,7 @@ export class FinanceWidget {
         if (this.destroyed || !this.root) return;
         this.visible = true;
         this.root.style.display = "";
+        this.installKeyboardListener();
     }
 
     /** Hide the widget (close). */
@@ -143,6 +210,7 @@ export class FinanceWidget {
         if (this.destroyed || !this.root) return;
         this.visible = false;
         this.root.style.display = "none";
+        this.removeKeyboardListener();
     }
 
     /** Check if widget is visible. */
@@ -164,9 +232,10 @@ export class FinanceWidget {
         this.root.style.height = this.savedHeight + "px";
         this.contentEl.style.display = "";
         this.updateCollapseButton();
+        this.persistState();
     }
 
-    /** Collapse the widget. */
+    /** Collapse the widget to compact title bar. */
     collapse(): void {
         if (this.collapsed || !this.root || !this.contentEl) return;
         // Save current size before collapsing
@@ -175,10 +244,60 @@ export class FinanceWidget {
         this.savedHeight = rect.height;
         this.collapsed = true;
         this.root.classList.add(`${this.classPrefix}-collapsed`);
-        this.root.style.height = COLLAPSED_HEIGHT + "px";
         this.contentEl.style.display = "none";
         this.updateCollapseButton();
+        this.persistState();
     }
+
+    /** Toggle collapse state. */
+    toggleCollapse(): void {
+        if (this.collapsed) {
+            this.expand();
+        } else {
+            this.collapse();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // State persistence
+    // -------------------------------------------------------------------------
+
+    private persistState(): void {
+        if (!this.root) return;
+        const rect = this.root.getBoundingClientRect();
+        saveState({
+            x: rect.left,
+            y: rect.top,
+            width: this.collapsed ? this.savedWidth : rect.width,
+            height: this.collapsed ? this.savedHeight : rect.height,
+            collapsed: this.collapsed,
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Keyboard shortcuts
+    // -------------------------------------------------------------------------
+
+    private installKeyboardListener(): void {
+        if (this.boundOnKeyDown) return;
+        this.boundOnKeyDown = this.onKeyDown;
+        document.addEventListener("keydown", this.boundOnKeyDown);
+    }
+
+    private removeKeyboardListener(): void {
+        if (this.boundOnKeyDown) {
+            document.removeEventListener("keydown", this.boundOnKeyDown);
+            this.boundOnKeyDown = null;
+        }
+    }
+
+    private onKeyDown = (e: KeyboardEvent): void => {
+        if (this.destroyed || !this.visible) return;
+        if (e.key === "Escape") {
+            this.hide();
+            this.onClose?.();
+        }
+    };
 
     // -------------------------------------------------------------------------
     // State rendering
@@ -206,9 +325,19 @@ export class FinanceWidget {
     // -------------------------------------------------------------------------
 
     private createRoot(): void {
+        const saved = loadState() ?? DEFAULT_STATE;
+
         const root = document.createElement("div");
         root.className = this.classPrefix;
         root.id = `${this.classPrefix}-widget`;
+        root.style.left = saved.x + "px";
+        root.style.top = saved.y + "px";
+        root.style.bottom = "auto";
+        root.style.right = "auto";
+
+        if (saved.collapsed) {
+            root.classList.add(`${this.classPrefix}-collapsed`);
+        }
 
         // Drag handle (header)
         const dragHandle = document.createElement("div");
@@ -224,7 +353,7 @@ export class FinanceWidget {
         logo.innerHTML = COMPANION_LOGO_SVG;
 
         const titleText = document.createElement("span");
-        titleText.textContent = "Finance";
+        titleText.textContent = "FINANCE";
 
         title.appendChild(logo);
         title.appendChild(titleText);
@@ -261,7 +390,7 @@ export class FinanceWidget {
         const collapseBtn = document.createElement("button");
         collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
         collapseBtn.title = "Collapse";
-        collapseBtn.textContent = "\u25BC";
+        collapseBtn.textContent = this.collapsed ? "\u25B6" : "\u25BC";
 
         // Close button
         const closeBtn = document.createElement("button");
@@ -282,6 +411,10 @@ export class FinanceWidget {
         const content = document.createElement("div");
         content.className = `${this.classPrefix}-body`;
 
+        if (saved.collapsed) {
+            content.style.display = "none";
+        }
+
         // Resize handle
         const resizeHandle = document.createElement("div");
         resizeHandle.className = `${this.classPrefix}-resize-handle`;
@@ -300,6 +433,7 @@ export class FinanceWidget {
 
         // Attach event listeners
         dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
+        dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
         resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
         shiftBtn.addEventListener("click", this.onShiftToggle);
         refreshBtn.addEventListener("click", this.onRefreshClick);
@@ -307,6 +441,9 @@ export class FinanceWidget {
         closeBtn.addEventListener("click", this.onCloseClick);
 
         this.container.appendChild(root);
+
+        // Install keyboard listener
+        this.installKeyboardListener();
     }
 
     // -------------------------------------------------------------------------
@@ -373,6 +510,7 @@ export class FinanceWidget {
             }
         }
 
+        this.persistState();
         this.removeDragListeners();
     };
 
@@ -435,6 +573,7 @@ export class FinanceWidget {
 
     private onResizePointerUp = (): void => {
         this.isResizing = false;
+        this.persistState();
         this.removeResizeListeners();
     };
 
@@ -457,23 +596,27 @@ export class FinanceWidget {
 
     private updateCollapseButton(): void {
         if (!this.collapseBtn) return;
-        this.collapseBtn.textContent = this.collapsed ? "\u25B2" : "\u25BC";
+        this.collapseBtn.textContent = this.collapsed ? "\u25B6" : "\u25BC";
         this.collapseBtn.title = this.collapsed ? "Expand" : "Collapse";
     }
 
     private onCollapseClick = (): void => {
         if (this.destroyed) return;
-        if (this.collapsed) {
-            this.expand();
-        } else {
-            this.collapse();
-        }
+        this.toggleCollapse();
     };
 
     private onCloseClick = (): void => {
         if (this.destroyed) return;
         this.hide();
         this.onClose?.();
+    };
+
+    private onHeaderDoubleClick = (e: MouseEvent): void => {
+        if (this.destroyed) return;
+        // Don't toggle if double-clicking a button
+        const target = e.target as HTMLElement;
+        if (target.closest("button")) return;
+        this.toggleCollapse();
     };
 
     // -------------------------------------------------------------------------
