@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         AgencyBooster Finance Companion
+// @name         Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
-// @description  Finance widget for AgencyBooster
+// @version      1.0.0
+// @description  Companion application — Finance module
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -14,6 +14,228 @@
   var __defProp = Object.defineProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // ../src/companion/companion-app.ts
+  var LAUNCHER_BUTTON_CSS = `
+#ab-companion-launcher {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 2147483647;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #2F6BFF;
+    border: 2px solid rgba(255,255,255,0.15);
+    color: #FFFFFF;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(47,107,255,0.4);
+    transition: all 0.2s ease;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    user-select: none;
+    touch-action: none;
+}
+
+#ab-companion-launcher:hover {
+    background: #4A82FF;
+    box-shadow: 0 6px 24px rgba(47,107,255,0.6);
+    transform: scale(1.05);
+}
+
+#ab-companion-launcher:active {
+    transform: scale(0.95);
+}
+
+#ab-companion-launcher.active {
+    background: #EF5350;
+    box-shadow: 0 4px 16px rgba(239,83,80,0.4);
+}
+
+#ab-companion-launcher.active:hover {
+    background: #E57373;
+}
+
+#ab-companion-modules {
+    position: fixed;
+    top: 76px;
+    right: 24px;
+    z-index: 2147483646;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    background: #1F2235;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 6px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    min-width: 160px;
+}
+
+#ab-companion-modules.open {
+    display: flex;
+}
+
+.ab-companion-module-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: left;
+    color: #E0E0E0;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: all 0.15s ease;
+    width: 100%;
+}
+
+.ab-companion-module-item:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.ab-companion-module-item.open {
+    background: rgba(47,107,255,0.15);
+    border-color: #2F6BFF;
+    color: #FFFFFF;
+}
+
+.ab-companion-module-item .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    flex-shrink: 0;
+}
+
+.ab-companion-module-item.open .status-dot {
+    background: #81C784;
+}
+`;
+  var CompanionApp = class {
+    constructor() {
+      __publicField(this, "modules", /* @__PURE__ */ new Map());
+      __publicField(this, "launcher", null);
+      __publicField(this, "moduleMenu", null);
+    }
+    injectStyles() {
+      const existing = document.getElementById("ab-companion-styles");
+      if (existing) return;
+      const style = document.createElement("style");
+      style.id = "ab-companion-styles";
+      style.textContent = LAUNCHER_BUTTON_CSS;
+      document.head.appendChild(style);
+    }
+    /**
+     * Register a module with Companion.
+     * The module becomes available in the launcher menu.
+     */
+    registerModule(module) {
+      if (this.modules.has(module.name)) return;
+      this.modules.set(module.name, module);
+    }
+    /** Start the Companion application and create the launcher UI. */
+    start() {
+      if (this.launcher) return;
+      this.injectStyles();
+      this.createUI();
+    }
+    /** Get all registered modules. */
+    getModules() {
+      return Array.from(this.modules.values());
+    }
+    /** Get a registered module by name. */
+    getModule(name) {
+      return this.modules.get(name);
+    }
+    // -------------------------------------------------------------------------
+    // UI
+    // -------------------------------------------------------------------------
+    createUI() {
+      const btn = document.createElement("button");
+      btn.id = "ab-companion-launcher";
+      btn.title = "Companion";
+      btn.textContent = "C";
+      btn.addEventListener("click", () => this.onLauncherClick());
+      document.body.appendChild(btn);
+      this.launcher = btn;
+      const menu = document.createElement("div");
+      menu.id = "ab-companion-modules";
+      document.body.appendChild(menu);
+      this.moduleMenu = menu;
+      this.buildMenuItems();
+    }
+    buildMenuItems() {
+      if (!this.moduleMenu) return;
+      this.moduleMenu.innerHTML = "";
+      for (const mod of this.modules.values()) {
+        const item = document.createElement("button");
+        item.className = "ab-companion-module-item";
+        item.dataset.module = mod.name;
+        const dot = document.createElement("span");
+        dot.className = "status-dot";
+        item.appendChild(dot);
+        const label = document.createElement("span");
+        label.textContent = mod.label;
+        item.appendChild(label);
+        item.addEventListener("click", () => this.onModuleItemClick(mod.name));
+        this.moduleMenu.appendChild(item);
+      }
+      this.updateMenuItems();
+    }
+    updateMenuItems() {
+      if (!this.moduleMenu) return;
+      const items = this.moduleMenu.querySelectorAll(".ab-companion-module-item");
+      items.forEach((el) => {
+        const modName = el.dataset.module;
+        if (!modName) return;
+        const mod = this.modules.get(modName);
+        if (mod && mod.isOpen) {
+          el.classList.add("open");
+        } else {
+          el.classList.remove("open");
+        }
+      });
+    }
+    onLauncherClick() {
+      if (!this.moduleMenu) return;
+      if (this.moduleMenu.classList.contains("open")) {
+        this.closeMenu();
+      } else {
+        this.openMenu();
+      }
+    }
+    openMenu() {
+      if (!this.moduleMenu || !this.launcher) return;
+      this.updateMenuItems();
+      this.moduleMenu.classList.add("open");
+      this.launcher.classList.add("active");
+    }
+    closeMenu() {
+      if (!this.moduleMenu || !this.launcher) return;
+      this.moduleMenu.classList.remove("open");
+      this.launcher.classList.remove("active");
+    }
+    onModuleItemClick(name) {
+      const mod = this.modules.get(name);
+      if (!mod) return;
+      if (mod.isOpen) {
+        mod.close();
+      } else {
+        mod.open();
+      }
+      this.updateMenuItems();
+      this.closeMenu();
+    }
+  };
 
   // ../src/companion/finance-api-client.ts
   var FinanceApiError = class extends Error {
@@ -80,20 +302,20 @@
     async fetchTransactions(from, to, options) {
       const url = this.buildUrl(from, to);
       const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const controller2 = new AbortController();
+      const timeoutId = setTimeout(() => controller2.abort(), timeoutMs);
       if (options?.signal) {
         if (options.signal.aborted) {
           clearTimeout(timeoutId);
           throw new FinanceApiAbortError("Signal already aborted");
         }
-        options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+        options.signal.addEventListener("abort", () => controller2.abort(), { once: true });
       }
       try {
         const response = await fetch(url, {
           method: "GET",
           credentials: "same-origin",
-          signal: controller.signal,
+          signal: controller2.signal,
           headers: {
             "Accept": "application/json"
           }
@@ -686,24 +908,24 @@
     async refresh() {
       this.cancelPending();
       this.setState({ status: "loading", error: null });
-      const controller = new AbortController();
-      this.abortController = controller;
+      const controller2 = new AbortController();
+      this.abortController = controller2;
       try {
         const raw = await this.client.fetchTransactions(
           this.state.from,
           this.state.to,
           {
-            signal: controller.signal,
+            signal: controller2.signal,
             timeoutMs: this.timeoutMs
           }
         );
-        if (controller.signal.aborted) {
+        if (controller2.signal.aborted) {
           return;
         }
         const mapped = FinanceMapper.mapResponse(raw);
         this.setState({ status: "loaded", data: mapped, error: null });
       } catch (error) {
-        if (controller.signal.aborted) {
+        if (controller2.signal.aborted) {
           return;
         }
         if (error instanceof FinanceApiAbortError) {
@@ -716,7 +938,7 @@
           this.setState({ status: "error", error: "Unknown error" });
         }
       } finally {
-        if (this.abortController === controller) {
+        if (this.abortController === controller2) {
           this.abortController = null;
         }
       }
@@ -823,7 +1045,7 @@
     }
   }
   var FinanceWidget = class {
-    constructor(controller, config = {}) {
+    constructor(controller2, config = {}) {
       __publicField(this, "controller");
       __publicField(this, "container");
       __publicField(this, "classPrefix");
@@ -999,7 +1221,7 @@
           }
         }
       });
-      this.controller = controller;
+      this.controller = controller2;
       this.container = config.container ?? document.body;
       this.classPrefix = config.classPrefix ?? DEFAULT_CLASS_PREFIX;
       this.onClose = config.onClose;
@@ -1891,59 +2113,64 @@
 `;
 
   // ../src/companion/bootstrap.ts
-  function injectStyles() {
+  var app = null;
+  var widget = null;
+  var controller = null;
+  var stylesInjected = false;
+  var widgetInitialized = false;
+  function injectFinanceStyles() {
+    if (stylesInjected) return;
+    stylesInjected = true;
     const style = document.createElement("style");
     style.id = "ab-finance-styles";
     style.textContent = FINANCE_WIDGET_CSS;
     document.head.appendChild(style);
   }
-  function createReopenButton(widget) {
-    const btn = document.createElement("button");
-    btn.id = "ab-finance-reopen";
-    btn.title = "Open Finance";
-    btn.textContent = "Finance";
-    btn.style.cssText = `
-        position: fixed;
-        bottom: 24px;
-        left: 24px;
-        z-index: 2147483645;
-        background: #2F6BFF;
-        color: #fff;
-        border: none;
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        display: none;
-    `;
-    btn.addEventListener("click", () => {
-      widget.show();
-      btn.style.display = "none";
-    });
-    document.body.appendChild(btn);
-    return btn;
+  function ensureFinanceWidget() {
+    if (widgetInitialized) return;
+    widgetInitialized = true;
+    injectFinanceStyles();
+    controller = new FinanceController();
+    widget = new FinanceWidget(controller);
+    widget.hide();
+  }
+  function createFinanceModule() {
+    return {
+      name: "finance",
+      label: "Finance",
+      open() {
+        ensureFinanceWidget();
+        widget?.show();
+      },
+      close() {
+        widget?.hide();
+      },
+      get isOpen() {
+        return widget?.isVisible ?? false;
+      },
+      destroy() {
+        widget?.destroy();
+        controller?.cancelPending();
+        widget = null;
+        controller = null;
+        widgetInitialized = false;
+      }
+    };
+  }
+  function createApp() {
+    app = new CompanionApp();
+    app.registerModule(createFinanceModule());
+    app.start();
   }
   function bootstrap() {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", bootstrap);
       return;
     }
-    if (window.__AB_FINANCE_COMPANION__) return;
-    window.__AB_FINANCE_COMPANION__ = true;
+    if (window.__AB_COMPANION_APP__) return;
+    window.__AB_COMPANION_APP__ = true;
     if (window !== window.top) return;
-    injectStyles();
-    const controller = new FinanceController();
-    let reopenBtn = null;
-    const widget = new FinanceWidget(controller, {
-      onClose: () => {
-        if (!reopenBtn) {
-          reopenBtn = createReopenButton(widget);
-        }
-        reopenBtn.style.display = "block";
-      }
-    });
+    createApp();
   }
   bootstrap();
 })();

@@ -5,6 +5,10 @@
  * including the Finance API client for server-side data access.
  */
 
+// CompanionApp — application launcher and module registry
+export { CompanionApp } from "./companion-app";
+export type { CompanionModule } from "./companion-module";
+
 // FinanceApiClient — HTTP communication layer
 export { FinanceApiClient } from "./finance-api-client";
 export type { FinanceApiResponse, FinanceApiClientConfig } from "./finance-api-client";
@@ -46,3 +50,7 @@ export type {
 // FinanceWidget — DOM-based UI
 export { FinanceWidget } from "./finance-widget";
 export type { FinanceWidgetConfig } from "./finance-widget";
+
+// Brand assets
+export { COMPANION_LOGO_SVG, COMPANION_LOGO_DATA_URI } from "./brand-logo";
+export { BRAND_COLORS } from "./brand-colors";
