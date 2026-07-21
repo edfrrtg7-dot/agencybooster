@@ -1890,6 +1890,34 @@
     style.textContent = FINANCE_WIDGET_CSS;
     document.head.appendChild(style);
   }
+  function createReopenButton(widget) {
+    const btn = document.createElement("button");
+    btn.id = "ab-finance-reopen";
+    btn.title = "Open Finance";
+    btn.textContent = "Finance";
+    btn.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        left: 24px;
+        z-index: 2147483645;
+        background: #2F6BFF;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: none;
+    `;
+    btn.addEventListener("click", () => {
+      widget.show();
+      btn.style.display = "none";
+    });
+    document.body.appendChild(btn);
+    return btn;
+  }
   function bootstrap() {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", bootstrap);
@@ -1900,7 +1928,15 @@
     if (window !== window.top) return;
     injectStyles();
     const controller = new FinanceController();
-    new FinanceWidget(controller);
+    let reopenBtn = null;
+    const widget = new FinanceWidget(controller, {
+      onClose: () => {
+        if (!reopenBtn) {
+          reopenBtn = createReopenButton(widget);
+        }
+        reopenBtn.style.display = "block";
+      }
+    });
   }
   bootstrap();
 })();
