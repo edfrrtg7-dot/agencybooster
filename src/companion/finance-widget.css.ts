@@ -30,6 +30,26 @@ export const FINANCE_WIDGET_CSS = `
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: height 0.2s ease;
+}
+
+/* Collapsed state */
+.ab-finance.collapsed {
+    min-height: auto;
+    height: 48px !important;
+}
+
+.ab-finance.collapsed .ab-finance-body {
+    display: none;
+}
+
+.ab-finance.collapsed .ab-finance-resize-handle {
+    display: none;
+}
+
+.ab-finance.collapsed .ab-finance-header {
+    border-bottom: none;
+    border-radius: 10px;
 }
 
 /* Resize handle */
@@ -93,7 +113,7 @@ export const FINANCE_WIDGET_CSS = `
 
 .ab-finance-header-actions {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     align-items: center;
     position: relative;
 }
@@ -103,18 +123,29 @@ export const FINANCE_WIDGET_CSS = `
     border: none;
     color: rgba(255,255,255,0.5);
     cursor: pointer;
-    padding: 2px;
+    padding: 4px 6px;
     border-radius: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.15s;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .ab-finance-header-actions button:hover {
     color: #E0E0E0;
     background: rgba(255,255,255,0.1);
+}
+
+/* Collapse button */
+.ab-finance-collapse-btn {
+    font-size: 10px !important;
+}
+
+/* Close button */
+.ab-finance-close-btn:hover {
+    background: rgba(239,83,80,0.3) !important;
+    color: #EF5350 !important;
 }
 
 /* Body */
@@ -243,7 +274,7 @@ export const FINANCE_WIDGET_CSS = `
     width: 100%;
 }
 
-/* Transaction header: 4 columns — Time | Operation | Target | Credits */
+/* Transaction header: 4 columns — Time | Operation | Target ID | Credits */
 .ab-finance-tx-header {
     display: grid;
     grid-template-columns: 50px 1fr 1fr 60px;

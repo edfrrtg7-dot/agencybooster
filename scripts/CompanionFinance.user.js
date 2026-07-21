@@ -791,18 +791,27 @@
   var MIN_HEIGHT = 200;
   var MAX_WIDTH = 700;
   var MAX_HEIGHT = 600;
+  var COLLAPSED_HEIGHT = 48;
   var FinanceWidget = class {
     constructor(controller, config = {}) {
       __publicField(this, "controller");
       __publicField(this, "container");
       __publicField(this, "classPrefix");
       __publicField(this, "unsubscribe");
+      __publicField(this, "onClose");
       __publicField(this, "root", null);
       __publicField(this, "refreshBtn", null);
       __publicField(this, "shiftBtn", null);
       __publicField(this, "shiftDropdown", null);
       __publicField(this, "contentEl", null);
+      __publicField(this, "collapseBtn", null);
+      __publicField(this, "closeBtn", null);
       __publicField(this, "destroyed", false);
+      __publicField(this, "collapsed", false);
+      __publicField(this, "visible", true);
+      // Saved size for restore after collapse
+      __publicField(this, "savedWidth", 360);
+      __publicField(this, "savedHeight", 380);
       // Drag state
       __publicField(this, "isDragging", false);
       __publicField(this, "dragStartX", 0);
@@ -827,7 +836,7 @@
         this.render(state);
       });
       // -------------------------------------------------------------------------
-      // Drag handling
+      // Drag handling — bulletproof state management
       // -------------------------------------------------------------------------
       __publicField(this, "onDragPointerDown", (e) => {
         if (this.destroyed || !this.root) return;
@@ -874,7 +883,7 @@
         this.removeDragListeners();
       });
       // -------------------------------------------------------------------------
-      // Resize handling
+      // Resize handling — bulletproof state management
       // -------------------------------------------------------------------------
       __publicField(this, "onResizePointerDown", (e) => {
         if (this.destroyed || !this.root) return;
@@ -902,10 +911,25 @@
         const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, this.resizeOrigH + dy));
         this.root.style.width = newW + "px";
         this.root.style.height = newH + "px";
+        this.savedWidth = newW;
+        this.savedHeight = newH;
       });
       __publicField(this, "onResizePointerUp", () => {
         this.isResizing = false;
         this.removeResizeListeners();
+      });
+      __publicField(this, "onCollapseClick", () => {
+        if (this.destroyed) return;
+        if (this.collapsed) {
+          this.expand();
+        } else {
+          this.collapse();
+        }
+      });
+      __publicField(this, "onCloseClick", () => {
+        if (this.destroyed) return;
+        this.hide();
+        this.onClose?.();
       });
       __publicField(this, "onRefreshClick", () => {
         if (this.destroyed) return;
@@ -934,6 +958,7 @@
       this.controller = controller;
       this.container = config.container ?? document.body;
       this.classPrefix = config.classPrefix ?? DEFAULT_CLASS_PREFIX;
+      this.onClose = config.onClose;
       this.unsubscribe = this.controller.subscribe(this.onStateChange);
       this.render(this.controller.getState());
       this.controller.refresh();
@@ -955,10 +980,54 @@
       this.shiftBtn = null;
       this.shiftDropdown = null;
       this.contentEl = null;
+      this.collapseBtn = null;
+      this.closeBtn = null;
     }
     /** Check if the widget has been destroyed. */
     get isDestroyed() {
       return this.destroyed;
+    }
+    /** Show the widget (after close). */
+    show() {
+      if (this.destroyed || !this.root) return;
+      this.visible = true;
+      this.root.style.display = "";
+    }
+    /** Hide the widget (close). */
+    hide() {
+      if (this.destroyed || !this.root) return;
+      this.visible = false;
+      this.root.style.display = "none";
+    }
+    /** Check if widget is visible. */
+    get isVisible() {
+      return this.visible;
+    }
+    /** Check if widget is collapsed. */
+    get isCollapsed() {
+      return this.collapsed;
+    }
+    /** Expand the widget if collapsed. */
+    expand() {
+      if (!this.collapsed || !this.root || !this.contentEl) return;
+      this.collapsed = false;
+      this.root.classList.remove(`${this.classPrefix}-collapsed`);
+      this.root.style.width = this.savedWidth + "px";
+      this.root.style.height = this.savedHeight + "px";
+      this.contentEl.style.display = "";
+      this.updateCollapseButton();
+    }
+    /** Collapse the widget. */
+    collapse() {
+      if (this.collapsed || !this.root || !this.contentEl) return;
+      const rect = this.root.getBoundingClientRect();
+      this.savedWidth = rect.width;
+      this.savedHeight = rect.height;
+      this.collapsed = true;
+      this.root.classList.add(`${this.classPrefix}-collapsed`);
+      this.root.style.height = COLLAPSED_HEIGHT + "px";
+      this.contentEl.style.display = "none";
+      this.updateCollapseButton();
     }
     render(state) {
       if (!this.root) {
@@ -966,7 +1035,9 @@
       }
       this.updateRefreshButton(state.status);
       this.updateShiftButton(state.shift);
-      this.updateContent(state);
+      if (!this.collapsed) {
+        this.updateContent(state);
+      }
     }
     // -------------------------------------------------------------------------
     // DOM creation
@@ -1006,9 +1077,19 @@
       refreshBtn.className = `${this.classPrefix}-btn`;
       refreshBtn.title = "Refresh";
       refreshBtn.textContent = "\u21BB";
+      const collapseBtn = document.createElement("button");
+      collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
+      collapseBtn.title = "Collapse";
+      collapseBtn.textContent = "\u25BC";
+      const closeBtn = document.createElement("button");
+      closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
+      closeBtn.title = "Close";
+      closeBtn.textContent = "\u2715";
       actions.appendChild(shiftBtn);
       actions.appendChild(shiftDropdown);
       actions.appendChild(refreshBtn);
+      actions.appendChild(collapseBtn);
+      actions.appendChild(closeBtn);
       dragHandle.appendChild(title);
       dragHandle.appendChild(actions);
       const content = document.createElement("div");
@@ -1023,10 +1104,14 @@
       this.shiftBtn = shiftBtn;
       this.shiftDropdown = shiftDropdown;
       this.contentEl = content;
+      this.collapseBtn = collapseBtn;
+      this.closeBtn = closeBtn;
       dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
       resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
       shiftBtn.addEventListener("click", this.onShiftToggle);
       refreshBtn.addEventListener("click", this.onRefreshClick);
+      collapseBtn.addEventListener("click", this.onCollapseClick);
+      closeBtn.addEventListener("click", this.onCloseClick);
       this.container.appendChild(root);
     }
     removeDragListeners() {
@@ -1052,6 +1137,14 @@
       }
       this.boundOnResizePointerMove = null;
       this.boundOnResizePointerUp = null;
+    }
+    // -------------------------------------------------------------------------
+    // Window controls
+    // -------------------------------------------------------------------------
+    updateCollapseButton() {
+      if (!this.collapseBtn) return;
+      this.collapseBtn.textContent = this.collapsed ? "\u25B2" : "\u25BC";
+      this.collapseBtn.title = this.collapsed ? "Expand" : "Collapse";
     }
     // -------------------------------------------------------------------------
     // State-based rendering
@@ -1172,7 +1265,7 @@
         headerRow.className = `${this.classPrefix}-tx-header`;
         headerRow.appendChild(this.createTxHeaderCell("Time"));
         headerRow.appendChild(this.createTxHeaderCell("Operation"));
-        headerRow.appendChild(this.createTxHeaderCell("Target"));
+        headerRow.appendChild(this.createTxHeaderCell("Target ID"));
         headerRow.appendChild(this.createTxHeaderCell("Credits"));
         txContainer.appendChild(headerRow);
         for (const tx of filtered) {
@@ -1254,6 +1347,26 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: height 0.2s ease;
+}
+
+/* Collapsed state */
+.ab-finance.collapsed {
+    min-height: auto;
+    height: 48px !important;
+}
+
+.ab-finance.collapsed .ab-finance-body {
+    display: none;
+}
+
+.ab-finance.collapsed .ab-finance-resize-handle {
+    display: none;
+}
+
+.ab-finance.collapsed .ab-finance-header {
+    border-bottom: none;
+    border-radius: 10px;
 }
 
 /* Resize handle */
@@ -1317,7 +1430,7 @@
 
 .ab-finance-header-actions {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     align-items: center;
     position: relative;
 }
@@ -1327,18 +1440,29 @@
     border: none;
     color: rgba(255,255,255,0.5);
     cursor: pointer;
-    padding: 2px;
+    padding: 4px 6px;
     border-radius: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.15s;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .ab-finance-header-actions button:hover {
     color: #E0E0E0;
     background: rgba(255,255,255,0.1);
+}
+
+/* Collapse button */
+.ab-finance-collapse-btn {
+    font-size: 10px !important;
+}
+
+/* Close button */
+.ab-finance-close-btn:hover {
+    background: rgba(239,83,80,0.3) !important;
+    color: #EF5350 !important;
 }
 
 /* Body */
@@ -1467,7 +1591,7 @@
     width: 100%;
 }
 
-/* Transaction header: 4 columns \u2014 Time | Operation | Target | Credits */
+/* Transaction header: 4 columns \u2014 Time | Operation | Target ID | Credits */
 .ab-finance-tx-header {
     display: grid;
     grid-template-columns: 50px 1fr 1fr 60px;
@@ -1617,6 +1741,34 @@
     style.textContent = FINANCE_WIDGET_CSS;
     document.head.appendChild(style);
   }
+  function createReopenButton(widget) {
+    const btn = document.createElement("button");
+    btn.id = "ab-finance-reopen";
+    btn.title = "Open Finance";
+    btn.textContent = "Finance";
+    btn.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        left: 24px;
+        z-index: 2147483645;
+        background: #2F6BFF;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: none;
+    `;
+    btn.addEventListener("click", () => {
+      widget.show();
+      btn.style.display = "none";
+    });
+    document.body.appendChild(btn);
+    return btn;
+  }
   function bootstrap() {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", bootstrap);
@@ -1627,7 +1779,15 @@
     if (window !== window.top) return;
     injectStyles();
     const controller = new FinanceController();
-    new FinanceWidget(controller);
+    let reopenBtn = null;
+    const widget = new FinanceWidget(controller, {
+      onClose: () => {
+        if (!reopenBtn) {
+          reopenBtn = createReopenButton(widget);
+        }
+        reopenBtn.style.display = "block";
+      }
+    });
   }
   bootstrap();
 })();
