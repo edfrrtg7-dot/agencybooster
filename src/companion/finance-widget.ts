@@ -241,6 +241,8 @@ export class FinanceWidget {
         // Restore geometry from state
         this.root.style.width = this.win.width + "px";
         this.root.style.height = this.win.height + "px";
+        this.root.style.minHeight = "";
+        this.root.style.minWidth = "";
         this.root.style.overflow = "";
 
         // Update state
@@ -272,6 +274,8 @@ export class FinanceWidget {
         // Set fixed collapsed dimensions
         this.root.style.width = COLLAPSED_WIDTH + "px";
         this.root.style.height = COLLAPSED_HEIGHT + "px";
+        this.root.style.minHeight = COLLAPSED_HEIGHT + "px";
+        this.root.style.minWidth = COLLAPSED_WIDTH + "px";
         this.root.style.overflow = "hidden";
 
         // Update UI

@@ -1073,6 +1073,8 @@
       this.contentEl.style.padding = "";
       this.root.style.width = this.win.width + "px";
       this.root.style.height = this.win.height + "px";
+      this.root.style.minHeight = "";
+      this.root.style.minWidth = "";
       this.root.style.overflow = "";
       this.win = { ...this.win, collapsed: false };
       this.root.classList.remove(`${this.classPrefix}-collapsed`);
@@ -1095,6 +1097,8 @@
       this.contentEl.style.display = "none";
       this.root.style.width = COLLAPSED_WIDTH + "px";
       this.root.style.height = COLLAPSED_HEIGHT + "px";
+      this.root.style.minHeight = COLLAPSED_HEIGHT + "px";
+      this.root.style.minWidth = COLLAPSED_WIDTH + "px";
       this.root.style.overflow = "hidden";
       this.root.classList.add(`${this.classPrefix}-collapsed`);
       this.updateCollapseButton();
