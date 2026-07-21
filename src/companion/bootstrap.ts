@@ -7,6 +7,14 @@
 
 import { FinanceController } from "./finance-controller";
 import { FinanceWidget } from "./finance-widget";
+import { FINANCE_WIDGET_CSS } from "./finance-widget.css";
+
+function injectStyles(): void {
+    const style = document.createElement("style");
+    style.id = "ab-finance-styles";
+    style.textContent = FINANCE_WIDGET_CSS;
+    document.head.appendChild(style);
+}
 
 function bootstrap(): void {
     // Wait for DOM ready
@@ -21,6 +29,9 @@ function bootstrap(): void {
 
     // Guard: top frame only
     if (window !== window.top) return;
+
+    // Inject CSS
+    injectStyles();
 
     // Create controller and widget
     const controller = new FinanceController();
