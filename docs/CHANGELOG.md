@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.11.0
+
+Finance Synchronization Layer — automatic widget sync via DOM observation.
+
+- **Added**: `DomFinanceDataProvider._observer` — `MutationObserver` instance for Finance container monitoring
+- **Added**: `_FINANCE_SELECTORS` — consolidated selector string for Finance-related DOM elements
+- **Added**: `_hasFinanceContent(doc)` — checks if a document contains Finance-related elements
+- **Added**: `_startObserving()` — creates observer, attaches to all accessible document bodies
+- **Added**: `_stopObserving()` — disconnects observer, clears debounce timer, resets targets
+- **Added**: `_attachToDoc(doc)` — attaches observer to a document body (deduplicated via `WeakSet`)
+- **Added**: `_onMutation()` — mutation callback that schedules debounced refresh
+- **Added**: `_scheduleRefresh()` — 300ms debounce to batch rapid DOM mutations
+- **Changed**: `refresh()` now dynamically attaches observer to new Finance-containing documents
+- **Changed**: `App.start()` calls `_startObserving()` after initial refresh
+- **Changed**: Close button handler calls `_stopObserving()` to prevent leaks
+- **Removed**: No polling — pure DOM observation with debounced response
+
+## v1.10.0
+
+Finance DOM Provider — real Finance data from sender DOM, replacing mock provider.
+
+- **Added**: `DomFinanceDataProvider` — reads live Finance data from accessible sender documents
+- **Added**: `_getDocs()` — locates accessible documents via `DOMManager.getAccessibleDocuments()`
+- **Added**: `_parseCredits(docs)` — extracts credit balance from DOM elements
+- **Added**: `_parseTransactions(docs)` — extracts transaction rows from table/DOM selectors
+- **Added**: `_parseTransactionCells(texts)` — classifies cell text into date/time/operation/target/credits
+- **Added**: `refresh()` — parses DOM, applies shift filtering, builds `FinanceModel`, notifies subscribers
+- **Added**: `getCurrentModel()` — returns current `FinanceModel` snapshot
+- **Added**: `subscribe()`/`unsubscribe()`/`notify()` — observer pattern for widget updates
+- **Changed**: `App.start()` wires `DomFinanceDataProvider` as default provider, calls `refresh()` on startup
+- **Changed**: `handleFinanceRefresh()` delegates to provider's `refresh()` without double-notify
+- **Removed**: `MockFinanceDataProvider` no longer wired by default (kept as fallback)
+- **Removed**: Widget has zero coupling to `DataProvider`, `FinanceManager.fetchFinanceData()`, or `FinanceManager.getCachedState()`
+
+## v1.9.0
+
+Finance Data Layer Preparation — domain model, provider abstraction, widget dependency injection.
+
+- **Added**: `FinanceDomain` — domain model factory: `createModel()`, `createTransaction()`, `createTotals()`, `createPeriod()`, `emptyModel()`
+- **Added**: `MockFinanceDataProvider` — static placeholder data with `getCurrentModel()`, `subscribe()`/`unsubscribe()`/`notify()` observer pattern
+- **Added**: `CustomUI._financeProvider` — provider field for widget dependency injection
+- **Changed**: `buildFinanceWidget(provider)` accepts optional provider parameter, defaults to `MockFinanceDataProvider`
+- **Changed**: `_renderFinanceWidget(widget, model, widgetState)` consumes `FinanceModel` instead of raw `getCachedState()` data
+- **Changed**: `updateFinanceWidget()` reads from provider via `_financeProvider`
+- **Changed**: `handleFinanceRefresh()` delegates to provider's `refresh()` and `notify()` methods
+- **Changed**: `App.start()` passes `MockFinanceDataProvider` to `buildFinanceWidget()`
+- **Removed**: Widget no longer directly reads `FinanceManager.getCachedState()` for rendering
+- **Removed**: `handleFinanceRefresh` no longer calls `DataProvider.invalidate()` and `FinanceManager.fetchFinanceData(docs)` directly
+
+## v1.8.0
+
+Finance Widget Integration & Time Presets — architecture separation, working time presets, shift info display.
+
+- **Changed**: FinanceManager state architecture split into three independent stores: `agencybooster-finance-widget` (dimensions, collapsed, closed), `agencybooster-finance-data` (credits, transactions, parseMethod, failureReason, lastRefresh, lastDuration, lastStatus), `agencybooster-finance-preset` (morning/day/night)
+- **Changed**: Widget dimensions never depend on Finance settings; Finance settings never recreate the widget; refreshing Finance data never resets widget state
+- **Removed**: `showShiftPeriodModal()` — custom datetime-local picker replaced by preset buttons
+- **Removed**: Set/Clear buttons from Finance widget body
+- **Removed**: Period display row from Finance widget body
+- **Removed**: `_SHIFT_KEY`, `getShiftPeriod()`, `setShiftPeriod()`, `clearShiftPeriod()`, `getDefaultState()`, `readState()`, `writeState()`
+- **Added**: `readWidget()` / `writeWidget()` — widget UI state persistence
+- **Added**: `readData()` / `writeData()` — finance runtime data persistence
+- **Added**: `readPreset()` / `writePreset()` — preset selection persistence (default: "morning")
+- **Added**: `computeShiftRange(preset)` — computes Date range from preset with midnight-crossing support for Night
+- **Added**: `getShiftLabel(preset)` — Ukrainian locale shift labels (Ранок/День/Ніч)
+- **Added**: `getShiftTimeDisplay(preset)` — human-readable time ranges with "(наступний)" for Night
+- **Added**: Clock icon button in Finance widget header — opens compact shift dropdown
+- **Added**: Shift dropdown with three preset buttons (Ранок 07:00–14:59, День 15:00–22:59, Ніч 23:00–06:59)
+- **Added**: Active preset visually highlighted with `primary` class in dropdown
+- **Added**: Shift info display in widget body: today's date (Ukrainian format), shift name, time range
+- **Changed**: `_filterByShiftPeriod()` updated to handle midnight-crossing ranges (Night preset: start > end)
+- **Changed**: Time displays now use Ukrainian locale (`uk-UA`)
+- **Changed**: Finance data filtering always active — preset is never null (defaults to "morning")
+- **Changed**: Finance data layer isolated from widget UI — ready for live data source integration
+- **Added**: CSS for shift dropdown (`.ab-finance-shift-dropdown`, `.ab-finance-shift-option`, `.ab-finance-shift-open`)
+- **Added**: CSS for shift info display (`.ab-finance-shift-info`, `.ab-finance-shift-info-row`, `.ab-finance-shift-time-display`)
+- Version bumped to 1.8.0
+
 ## v1.7.0
 
 Companion UI & Branding Improvements — resizable Finance widget, launcher relocation, application identity.

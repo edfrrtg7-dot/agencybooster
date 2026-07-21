@@ -19,3 +19,7 @@
 | 016 | Reset IceBreaker — clear delivered field | Done | ab76414 |
 | 017 | Document Sender Storage Model | Done | ff6d059 |
 | 018 | Companion UI & Branding Improvements | Done | 614b42d |
+| 019 | Finance Widget Integration & Time Presets | Done | v1.8.0 |
+| 020 | Finance Data Layer Preparation | Done | v1.9.0 |
+| 021 | Implement DomFinanceDataProvider | Done | v1.10.0 |
+| 022 | Finance Synchronization Layer | Done | v1.11.0 |

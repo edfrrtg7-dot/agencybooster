@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgencyBooster Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.7.0
+// @version      1.11.0
 // @description  Enterprise-grade management utility for AgencyBooster. Runtime mapping, reset system, dashboard recovery.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -715,7 +715,7 @@
         clearDebugLog() {
             this._debugLog = [];
         },
-        _SHIFT_KEY: "agencybooster-finance-shift",
+        _DEFAULT_PRESET: "morning",
 
         _read(key) {
             try {
@@ -731,12 +731,17 @@
             } catch { return false; }
         },
 
-        getDefaultState() {
+        defaultWidget() {
             return {
                 width: null,
                 height: null,
                 collapsed: false,
-                closed: false,
+                closed: false
+            };
+        },
+
+        defaultData() {
+            return {
                 lastRefresh: null,
                 lastDuration: null,
                 lastStatus: null,
@@ -747,33 +752,63 @@
             };
         },
 
-        readState() {
-            return this._read("widget-state") || this.getDefaultState();
+        readWidget() {
+            return this._read("widget") || this.defaultWidget();
         },
 
-        writeState(state) {
-            return this._write("widget-state", state);
+        writeWidget(state) {
+            return this._write("widget", state);
         },
 
-        getShiftPeriod() {
-            try {
-                const raw = localStorage.getItem(this._SHIFT_KEY);
-                return raw ? JSON.parse(raw) : null;
-            } catch { return null; }
+        readData() {
+            return this._read("data") || this.defaultData();
         },
 
-        setShiftPeriod(start, end) {
-            try {
-                localStorage.setItem(this._SHIFT_KEY, JSON.stringify({ start, end }));
-                return true;
-            } catch { return false; }
+        writeData(data) {
+            return this._write("data", data);
         },
 
-        clearShiftPeriod() {
-            try {
-                localStorage.removeItem(this._SHIFT_KEY);
-                return true;
-            } catch { return false; }
+        readPreset() {
+            const raw = this._read("preset");
+            if (raw && typeof raw === "string" && ["morning", "day", "night"].includes(raw)) return raw;
+            return this._DEFAULT_PRESET;
+        },
+
+        writePreset(preset) {
+            if (!["morning", "day", "night"].includes(preset)) return false;
+            return this._write("preset", preset);
+        },
+
+        computeShiftRange(preset) {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const setTime = (date, h, m) => { const d = new Date(date); d.setHours(h, m, 0, 0); return d; };
+            switch (preset) {
+                case "morning": return { start: setTime(today, 7, 0), end: setTime(today, 14, 59) };
+                case "day": return { start: setTime(today, 15, 0), end: setTime(today, 22, 59) };
+                case "night": return { start: setTime(today, 23, 0), end: setTime(tomorrow, 6, 59) };
+                default: return { start: setTime(today, 7, 0), end: setTime(today, 14, 59) };
+            }
+        },
+
+        getShiftLabel(preset) {
+            switch (preset) {
+                case "morning": return "\u0420\u0430\u043d\u043e\u043a";
+                case "day": return "\u0414\u0435\u043d\u044c";
+                case "night": return "\u041d\u0456\u0447";
+                default: return "\u0420\u0430\u043d\u043e\u043a";
+            }
+        },
+
+        getShiftTimeDisplay(preset) {
+            switch (preset) {
+                case "morning": return "07:00 \u2192 14:59";
+                case "day": return "15:00 \u2192 22:59";
+                case "night": return "23:00 \u2192 06:59 (\u043d\u0430\u0441\u0442\u0443\u043f\u043d\u0456\u0439)";
+                default: return "07:00 \u2192 14:59";
+            }
         },
 
         async fetchFinanceData(docs) {
@@ -781,28 +816,28 @@
             try {
                 const result = FinanceManager.parseFinanceFromDocs(docs);
                 const duration = Math.round(performance.now() - startTime);
-                const state = FinanceManager.readState();
-                state.credits = result.credits;
-                state.transactions = result.transactions;
-                state.parseMethod = result.parseMethod;
-                state.failureReason = result.failureReason;
-                state.lastRefresh = Utils.getTimestamp();
-                state.lastDuration = duration;
-                state.lastStatus = (result.credits !== null || result.transactions.length > 0) ? "ok" : "no_data";
-                FinanceManager.writeState(state);
-                FinanceManager._cache = state;
-                return state;
+                const data = FinanceManager.readData();
+                data.credits = result.credits;
+                data.transactions = result.transactions;
+                data.parseMethod = result.parseMethod;
+                data.failureReason = result.failureReason;
+                data.lastRefresh = Utils.getTimestamp();
+                data.lastDuration = duration;
+                data.lastStatus = (result.credits !== null || result.transactions.length > 0) ? "ok" : "no_data";
+                FinanceManager.writeData(data);
+                FinanceManager._cache = data;
+                return data;
             } catch (e) {
                 const duration = Math.round(performance.now() - startTime);
-                const state = FinanceManager.readState();
-                state.lastRefresh = Utils.getTimestamp();
-                state.lastDuration = duration;
-                state.lastStatus = "error";
-                state.failureReason = e.message || String(e);
-                FinanceManager.writeState(state);
-                FinanceManager._cache = state;
+                const data = FinanceManager.readData();
+                data.lastRefresh = Utils.getTimestamp();
+                data.lastDuration = duration;
+                data.lastStatus = "error";
+                data.failureReason = e.message || String(e);
+                FinanceManager.writeData(data);
+                FinanceManager._cache = data;
                 Logger.error("FinanceWidget: fetch failed", e);
-                return state;
+                return data;
             }
         },
 
@@ -850,9 +885,10 @@
 
             FinanceManager._debugEntry("scan_complete", { credits, txCount: transactions.length, parseMethod, failureReason });
 
-            const shift = FinanceManager.getShiftPeriod();
-            if (shift && shift.start && shift.end && transactions.length > 0) {
-                transactions = FinanceManager._filterByShiftPeriod(transactions, shift);
+            const preset = FinanceManager.readPreset();
+            const range = FinanceManager.computeShiftRange(preset);
+            if (range && transactions.length > 0) {
+                transactions = FinanceManager._filterByShiftPeriod(transactions, range);
             }
 
             transactions = transactions.slice(-5);
@@ -967,24 +1003,288 @@
             return { date, time, operation, target, credits };
         },
 
-        _filterByShiftPeriod(transactions, shift) {
-            const start = new Date(shift.start);
-            const end = new Date(shift.end);
+        _filterByShiftPeriod(transactions, range) {
+            const start = range.start instanceof Date ? range.start : new Date(range.start);
+            const end = range.end instanceof Date ? range.end : new Date(range.end);
             if (isNaN(start) || isNaN(end)) return transactions;
+
+            const crossesMidnight = start > end;
 
             return transactions.filter(tx => {
                 if (!tx.date) return true;
                 try {
                     const txDate = new Date(tx.date + (tx.time ? " " + tx.time : ""));
-                    return !isNaN(txDate) && txDate >= start && txDate <= end;
+                    if (isNaN(txDate)) return true;
+                    if (crossesMidnight) {
+                        return txDate >= start || txDate <= end;
+                    }
+                    return txDate >= start && txDate <= end;
                 } catch { return true; }
             });
         },
 
         getCachedState() {
             if (FinanceManager._cache) return FinanceManager._cache;
-            FinanceManager._cache = FinanceManager.readState();
+            FinanceManager._cache = FinanceManager.readData();
             return FinanceManager._cache;
+        }
+    };
+
+    const FinanceDomain = {
+        createModel(credits, period, transactions, totals, lastRefresh, lastStatus) {
+            return { credits, period, transactions, totals, lastRefresh, lastStatus };
+        },
+
+        createTransaction(date, time, operation, target, credits) {
+            return { date, time, operation, target, credits };
+        },
+
+        createTotals(transactionCount, creditChange) {
+            return { transactionCount, creditChange };
+        },
+
+        createPeriod(start, end, label, timeDisplay) {
+            return { start, end, label, timeDisplay };
+        },
+
+        emptyModel() {
+            return {
+                credits: null,
+                period: null,
+                transactions: [],
+                totals: { transactionCount: 0, creditChange: null },
+                lastRefresh: null,
+                lastStatus: null
+            };
+        }
+    };
+
+    const MockFinanceDataProvider = {
+        _listeners: [],
+
+        getCurrentModel() {
+            return FinanceDomain.createModel(
+                12345,
+                FinanceDomain.createPeriod(
+                    new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 7, 0),
+                    new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 14, 59),
+                    "\u0420\u0430\u043d\u043e\u043a",
+                    "07:00 \u2192 14:59"
+                ),
+                [
+                    FinanceDomain.createTransaction("21.07.2026", "09:15", "\u0412\u0438\u0434\u0430\u0442\u043a\u0430", "User123", "50"),
+                    FinanceDomain.createTransaction("21.07.2026", "10:30", "\u041f\u043e\u043f\u043e\u0432\u043d\u0438\u0439", "User456", "25"),
+                    FinanceDomain.createTransaction("21.07.2026", "11:45", "\u0412\u0438\u0434\u0430\u0442\u043a\u0430", "User789", "75"),
+                    FinanceDomain.createTransaction("21.07.2026", "13:00", "\u041f\u043e\u043f\u043e\u0432\u043d\u0438\u0439", "User012", "30"),
+                    FinanceDomain.createTransaction("21.07.2026", "14:20", "\u0412\u0438\u0434\u0430\u0442\u043a\u0430", "User345", "60")
+                ],
+                FinanceDomain.createTotals(5, null),
+                new Date().toISOString(),
+                "ok"
+            );
+        },
+
+        subscribe(callback) {
+            if (typeof callback === "function" && !this._listeners.includes(callback)) {
+                this._listeners.push(callback);
+            }
+        },
+
+        unsubscribe(callback) {
+            this._listeners = this._listeners.filter(l => l !== callback);
+        },
+
+        notify() {
+            this._listeners.forEach(cb => {
+                try { cb(); } catch (e) { Logger.error("FinanceDataProvider: listener error", e); }
+            });
+        }
+    };
+
+    const DomFinanceDataProvider = {
+        _listeners: [],
+        _model: FinanceDomain.emptyModel(),
+        _observer: null,
+        _observerDebounce: null,
+        _observerTargets: new WeakSet(),
+        _FINANCE_SELECTORS: "[class*='credit'], [class*='balance'], [data-field='credits'], [data-field='balance'], table, .transaction-row, [class*='transaction']",
+
+        _getDocs() {
+            return DOMManager.getAccessibleDocuments(window);
+        },
+
+        _parseCredits(docs) {
+            for (const doc of docs) {
+                try {
+                    const el = doc.querySelector("[class*='credit'], [class*='balance'], [data-field='credits'], [data-field='balance']");
+                    if (!el) continue;
+                    const raw = (el.textContent || "").trim();
+                    const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
+                    if (!isNaN(num)) return num;
+                } catch {}
+            }
+            return null;
+        },
+
+        _parseTransactionCells(texts) {
+            if (texts.length < 2) return null;
+            let date = "", time = "", operation = "", target = "", credits = "";
+            for (const text of texts) {
+                if (!text) continue;
+                if (/^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}$/.test(text)) {
+                    date = text;
+                } else if (/^\d{1,2}:\d{2}/.test(text)) {
+                    time = text;
+                } else if (/^[\-+]?\d+[\.,]?\d*$/.test(text.replace(/[^\d.\-+]/g, ""))) {
+                    const num = parseFloat(text.replace(/[^\d.\-]/g, ""));
+                    if (!isNaN(num)) credits = text;
+                } else {
+                    if (!operation) operation = text;
+                    else if (!target) target = text;
+                }
+            }
+            if (!operation && !credits) return null;
+            return FinanceDomain.createTransaction(date, time, operation, target, credits);
+        },
+
+        _parseTransactions(docs) {
+            const transactions = [];
+            for (const doc of docs) {
+                try {
+                    const tables = doc.querySelectorAll("table");
+                    for (const table of tables) {
+                        const rows = table.querySelectorAll("tbody tr");
+                        for (const row of rows) {
+                            const cells = row.querySelectorAll("td");
+                            if (cells.length < 2) continue;
+                            const texts = Array.from(cells).map(c => (c.textContent || "").trim());
+                            const tx = this._parseTransactionCells(texts);
+                            if (tx) transactions.push(tx);
+                        }
+                    }
+                    if (transactions.length > 0) break;
+                } catch {}
+            }
+            if (transactions.length === 0) {
+                for (const doc of docs) {
+                    try {
+                        const rows = doc.querySelectorAll(".transaction-row, [class*='transaction']");
+                        for (const row of rows) {
+                            const cells = row.querySelectorAll("td, .cell, [class*='cell']");
+                            if (cells.length < 2) continue;
+                            const texts = Array.from(cells).map(c => (c.textContent || "").trim());
+                            const tx = this._parseTransactionCells(texts);
+                            if (tx) transactions.push(tx);
+                        }
+                        if (transactions.length > 0) break;
+                    } catch {}
+                }
+            }
+            return transactions;
+        },
+
+        _hasFinanceContent(doc) {
+            try {
+                return doc.body && doc.body.querySelector(this._FINANCE_SELECTORS) !== null;
+            } catch { return false; }
+        },
+
+        _scheduleRefresh() {
+            if (this._observerDebounce) clearTimeout(this._observerDebounce);
+            this._observerDebounce = setTimeout(() => {
+                this._observerDebounce = null;
+                this.refresh();
+            }, 300);
+        },
+
+        _onMutation() {
+            this._scheduleRefresh();
+        },
+
+        _attachToDoc(doc) {
+            if (!doc || !doc.body || this._observerTargets.has(doc.body)) return;
+            this._observerTargets.add(doc.body);
+            try {
+                this._observer.observe(doc.body, { childList: true, subtree: true, characterData: true });
+            } catch {}
+        },
+
+        _startObserving() {
+            if (this._observer) return;
+            this._observer = new MutationObserver(() => this._onMutation());
+            const docs = this._getDocs();
+            for (const doc of docs) {
+                if (this._hasFinanceContent(doc)) this._attachToDoc(doc);
+            }
+            for (const doc of docs) {
+                if (!this._hasFinanceContent(doc)) this._attachToDoc(doc);
+            }
+        },
+
+        _stopObserving() {
+            if (this._observer) {
+                this._observer.disconnect();
+                this._observer = null;
+            }
+            if (this._observerDebounce) {
+                clearTimeout(this._observerDebounce);
+                this._observerDebounce = null;
+            }
+            this._observerTargets = new WeakSet();
+        },
+
+        getCurrentModel() {
+            return this._model;
+        },
+
+        async refresh() {
+            try {
+                const docs = this._getDocs();
+                for (const doc of docs) {
+                    if (this._hasFinanceContent(doc)) this._attachToDoc(doc);
+                }
+                const credits = this._parseCredits(docs);
+                let transactions = this._parseTransactions(docs);
+                const preset = FinanceManager.readPreset();
+                const range = FinanceManager.computeShiftRange(preset);
+                if (range && transactions.length > 0) {
+                    transactions = FinanceManager._filterByShiftPeriod(transactions, range);
+                }
+                transactions = transactions.slice(-5);
+                const period = range
+                    ? FinanceDomain.createPeriod(range.start, range.end, FinanceManager.getShiftLabel(preset), FinanceManager.getShiftTimeDisplay(preset))
+                    : null;
+                const status = (credits !== null || transactions.length > 0) ? "ok" : "no_data";
+                this._model = FinanceDomain.createModel(
+                    credits, period, transactions,
+                    FinanceDomain.createTotals(transactions.length, null),
+                    new Date().toISOString(), status
+                );
+            } catch (e) {
+                this._model = FinanceDomain.createModel(
+                    null, null, [],
+                    FinanceDomain.createTotals(0, null),
+                    new Date().toISOString(), "error"
+                );
+                Logger.error("DomFinanceDataProvider: refresh failed", e);
+            }
+            this.notify();
+        },
+
+        subscribe(callback) {
+            if (typeof callback === "function" && !this._listeners.includes(callback)) {
+                this._listeners.push(callback);
+            }
+        },
+
+        unsubscribe(callback) {
+            this._listeners = this._listeners.filter(l => l !== callback);
+        },
+
+        notify() {
+            this._listeners.forEach(cb => {
+                try { cb(); } catch (e) { Logger.error("DomFinanceDataProvider: listener error", e); }
+            });
         }
     };
 
@@ -1177,7 +1477,7 @@
                 })(),
                 "FINANCE": (() => {
                     const fs = FinanceManager.getCachedState();
-                    const shift = FinanceManager.getShiftPeriod();
+                    const preset = FinanceManager.readPreset();
                     const finSection = {
                         "Last refresh": fs.lastRefresh || "Never",
                         "Request duration": fs.lastDuration !== null ? `${fs.lastDuration}ms` : "N/A",
@@ -1188,9 +1488,9 @@
                         "Parsed rows": Array.isArray(fs.transactions) ? fs.transactions.length : 0,
                         "Parse method": fs.parseMethod || "N/A",
                         "Parse failure": fs.failureReason || "None",
-                        "Shift period": shift && shift.start && shift.end ? `${shift.start} — ${shift.end}` : "All Time",
-                        "Widget collapsed": fs.collapsed ? "Yes" : "No",
-                        "Widget visible": fs.closed ? "No" : "Yes"
+                        "Shift preset": preset,
+                        "Widget collapsed": "N/A",
+                        "Widget visible": "N/A"
                     };
                     if (CONFIG.DEBUG_FINANCE) {
                         const dbg = FinanceManager.getDebugLog();
@@ -1340,7 +1640,7 @@ Transactions source : ${diagObj.FINANCE["Transactions source"]}
 Parsed rows         : ${diagObj.FINANCE["Parsed rows"]}
 Parse method        : ${diagObj.FINANCE["Parse method"]}
 Parse failure       : ${diagObj.FINANCE["Parse failure"]}
-Shift period        : ${diagObj.FINANCE["Shift period"]}
+Shift preset        : ${diagObj.FINANCE["Shift preset"]}
 Widget collapsed    : ${diagObj.FINANCE["Widget collapsed"]}
 Widget visible      : ${diagObj.FINANCE["Widget visible"]}
 ${CONFIG.DEBUG_FINANCE ? `Debug entries       : ${diagObj.FINANCE["Debug log entries"] || 0}` : `Debug               : disabled (set CONFIG.DEBUG_FINANCE=true to enable)`}
@@ -1480,7 +1780,7 @@ ${errorLines}
                 })(),
                 finance: (() => {
                     const fs = FinanceManager.getCachedState();
-                    const shift = FinanceManager.getShiftPeriod();
+                    const preset = FinanceManager.readPreset();
                     return {
                         lastRefresh: fs.lastRefresh,
                         lastDuration: fs.lastDuration,
@@ -1491,10 +1791,7 @@ ${errorLines}
                         parsedRows: Array.isArray(fs.transactions) ? fs.transactions.length : 0,
                         parseMethod: fs.parseMethod || null,
                         failureReason: fs.failureReason || null,
-                        shiftPeriod: shift && shift.start && shift.end ? shift : "all",
-                        collapsed: fs.collapsed,
-                        closed: fs.closed,
-                        position: { x: fs.x, y: fs.y },
+                        shiftPreset: preset,
                         debugLog: CONFIG.DEBUG_FINANCE ? FinanceManager.getDebugLog() : null
                     };
                 })(),
@@ -1684,6 +1981,7 @@ ${errorLines}
         overlay: null,
         activeProfileKey: null,
         dashboardInterval: null,
+        _financeProvider: null,
 
         _readTab() {
             try {
@@ -1864,7 +2162,7 @@ ${errorLines}
                     color: var(--ab-text-dim); text-transform: uppercase; letter-spacing: 0.5px;
                 }
                 .ab-finance-header-title svg { width: 14px; height: 14px; fill: var(--ab-accent); }
-                .ab-finance-header-actions { display: flex; gap: 4px; }
+                .ab-finance-header-actions { display: flex; gap: 4px; align-items: center; position: relative; }
                 .ab-finance-header-actions button {
                     background: none; border: none; color: var(--ab-text-dim); cursor: pointer;
                     padding: 2px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
@@ -1908,6 +2206,28 @@ ${errorLines}
                 }
                 .ab-finance-tx-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                 .ab-finance-tx-op { color: var(--ab-text-dim); }
+                .ab-finance-shift-dropdown {
+                    display: none; position: absolute; top: 100%; right: 0; margin-top: 4px;
+                    background: var(--ab-bg); border: 1px solid var(--ab-border); border-radius: 8px;
+                    padding: 4px; z-index: 10; min-width: 160px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+                    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+                }
+                .ab-finance-shift-dropdown.ab-finance-shift-open { display: flex; flex-direction: column; gap: 2px; }
+                .ab-finance-shift-option {
+                    display: flex; flex-direction: column; gap: 1px;
+                    background: none; border: 1px solid transparent; border-radius: 6px;
+                    padding: 6px 10px; cursor: pointer; text-align: left;
+                    color: var(--ab-text); transition: all 0.15s;
+                }
+                .ab-finance-shift-option:hover { background: rgba(255,255,255,0.08); }
+                .ab-finance-shift-option.primary { background: var(--ab-accent); border-color: var(--ab-accent); color: #fff; }
+                .ab-finance-shift-option.primary:hover { background: var(--ab-accent-hover); }
+                .ab-finance-shift-name { font-size: 11px; font-weight: 600; }
+                .ab-finance-shift-time { font-size: 9px; opacity: 0.7; }
+                .ab-finance-shift-info { display: flex; flex-direction: column; gap: 4px; padding: 2px 0; }
+                .ab-finance-shift-info-row { display: flex; justify-content: space-between; align-items: center; }
+                .ab-finance-shift-time-display { font-size: 11px; color: var(--ab-accent); }
             `;
             document.head.appendChild(style);
         },
@@ -2297,29 +2617,33 @@ ${errorLines}
             btn.onclick = () => App.openMenu();
         },
 
-        buildFinanceWidget: () => {
+        buildFinanceWidget: (provider) => {
             DOMManager.removeElements("#ab-finance-widget");
             if (window !== window.top) return;
 
-            const state = FinanceManager.readState();
-            if (state.closed) return;
+            if (provider) CustomUI._financeProvider = provider;
+            const dp = CustomUI._financeProvider || MockFinanceDataProvider;
+
+            const widgetState = FinanceManager.readWidget();
+            if (widgetState.closed) return;
 
             const widget = document.createElement("div");
             widget.id = "ab-finance-widget";
-            widget.classList.add(state.collapsed ? "ab-finance-collapsed" : "ab-finance-expanded");
+            widget.classList.add(widgetState.collapsed ? "ab-finance-collapsed" : "ab-finance-expanded");
 
-            if (!state.collapsed) {
-                const w = state.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH;
-                const h = state.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
+            if (!widgetState.collapsed) {
+                const w = widgetState.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH;
+                const h = widgetState.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
                 widget.style.width = w + "px";
                 widget.style.height = h + "px";
             } else {
-                widget.style.width = (state.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH) + "px";
+                widget.style.width = (widgetState.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH) + "px";
             }
 
-            CustomUI._renderFinanceWidget(widget, state);
+            const model = dp.getCurrentModel();
+            CustomUI._renderFinanceWidget(widget, model, widgetState);
 
-            if (!state.collapsed) {
+            if (!widgetState.collapsed) {
                 const handle = document.createElement("div");
                 handle.id = "ab-finance-resize-handle";
                 widget.appendChild(handle);
@@ -2327,29 +2651,29 @@ ${errorLines}
 
             DOMManager.appendBody(widget);
             CustomUI._initFinanceDrag(widget);
-            if (!state.collapsed) CustomUI._initFinanceResize(widget);
+            if (!widgetState.collapsed) CustomUI._initFinanceResize(widget);
         },
 
-        _renderFinanceWidget: (widget, state) => {
-            const shift = FinanceManager.getShiftPeriod();
-            const periodDisplay = shift && shift.start && shift.end
-                ? `${new Date(shift.start).toLocaleString()} — ${new Date(shift.end).toLocaleString()}`
-                : "All Time";
+        _renderFinanceWidget: (widget, model, widgetState) => {
+            const today = new Date();
+            const dateDisplay = today.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
+            const shiftLabel = model.period ? model.period.label : "\u0420\u0430\u043d\u043e\u043a";
+            const shiftTime = model.period ? model.period.timeDisplay : "07:00 \u2192 14:59";
 
-            const creditsDisplay = state.credits !== null
-                ? `<span class="ab-finance-value ab-finance-accent">${state.credits.toLocaleString()}</span>`
-                : `<span class="ab-finance-value" style="color:var(--ab-text-dim)">—</span>`;
+            const creditsDisplay = model.credits !== null
+                ? `<span class="ab-finance-value ab-finance-accent">${model.credits.toLocaleString()}</span>`
+                : `<span class="ab-finance-value" style="color:var(--ab-text-dim)">\u2014</span>`;
 
-            const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+            const transactions = Array.isArray(model.transactions) ? model.transactions : [];
             let txTableHtml = "";
             if (transactions.length > 0) {
                 const rows = transactions.map(tx => `
                     <div class="ab-finance-tx-row">
-                        <span class="ab-finance-tx-cell">${tx.date || "—"}</span>
-                        <span class="ab-finance-tx-cell">${tx.time || "—"}</span>
-                        <span class="ab-finance-tx-cell ab-finance-tx-op">${tx.operation || "—"}</span>
-                        <span class="ab-finance-tx-cell">${tx.target || "—"}</span>
-                        <span class="ab-finance-tx-cell" style="font-weight:600;color:var(--ab-accent)">${tx.credits || "—"}</span>
+                        <span class="ab-finance-tx-cell">${tx.date || "\u2014"}</span>
+                        <span class="ab-finance-tx-cell">${tx.time || "\u2014"}</span>
+                        <span class="ab-finance-tx-cell ab-finance-tx-op">${tx.operation || "\u2014"}</span>
+                        <span class="ab-finance-tx-cell">${tx.target || "\u2014"}</span>
+                        <span class="ab-finance-tx-cell" style="font-weight:600;color:var(--ab-accent)">${tx.credits || "\u2014"}</span>
                     </div>
                 `).join("");
                 txTableHtml = `
@@ -2366,19 +2690,25 @@ ${errorLines}
                 txTableHtml = `<div style="text-align:center;color:var(--ab-text-dim);font-size:10px;padding:6px 0;">No transactions</div>`;
             }
 
-            const lastRefreshDisplay = state.lastRefresh
-                ? new Date(state.lastRefresh).toLocaleTimeString()
+            const lastRefreshDisplay = model.lastRefresh
+                ? new Date(model.lastRefresh).toLocaleTimeString("uk-UA")
                 : "Never";
 
-            const statusDisplay = state.lastStatus === "ok"
+            const statusDisplay = model.lastStatus === "ok"
                 ? `<span class="ab-finance-status" style="color:var(--ab-success)">Last refresh: ${lastRefreshDisplay}</span>`
-                : state.lastStatus === "error"
+                : model.lastStatus === "error"
                     ? `<span class="ab-finance-status" style="color:var(--ab-danger)">Refresh failed</span>`
                     : `<span class="ab-finance-status">Last refresh: ${lastRefreshDisplay}</span>`;
 
-            const collapseIcon = state.collapsed
+            const collapseIcon = widgetState.collapsed
                 ? `<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>`
                 : `<svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>`;
+
+            const makeShiftBtn = (key, label, timeRange) => {
+                const preset = FinanceManager.readPreset();
+                const active = preset === key ? " primary" : "";
+                return `<button class="ab-finance-shift-option${active}" data-shift="${key}"><span class="ab-finance-shift-name">${label}</span><span class="ab-finance-shift-time">${timeRange}</span></button>`;
+            };
 
             widget.innerHTML = `
                 <div class="ab-finance-header" id="ab-finance-drag-handle">
@@ -2387,6 +2717,14 @@ ${errorLines}
                         Finance
                     </div>
                     <div class="ab-finance-header-actions">
+                        <button id="ab-finance-shift-btn" title="Shift">
+                            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                        </button>
+                        <div class="ab-finance-shift-dropdown" id="ab-finance-shift-dropdown">
+                            ${makeShiftBtn("morning", "\u0420\u0430\u043d\u043e\u043a", "07:00 \u2013 14:59")}
+                            ${makeShiftBtn("day", "\u0414\u0435\u043d\u044c", "15:00 \u2013 22:59")}
+                            ${makeShiftBtn("night", "\u041d\u0456\u0447", "23:00 \u2013 06:59")}
+                        </div>
                         <button id="ab-finance-toggle" title="Collapse/Expand">${collapseIcon}</button>
                         <button id="ab-finance-close" title="Close widget">
                             <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
@@ -2394,17 +2732,24 @@ ${errorLines}
                     </div>
                 </div>
                 <div class="ab-finance-body">
+                    <div class="ab-finance-shift-info">
+                        <div class="ab-finance-shift-info-row">
+                            <span class="ab-finance-label">\u0421\u044c\u043e\u0433\u043e\u0434\u043d\u0456:</span>
+                            <span class="ab-finance-value">${dateDisplay}</span>
+                        </div>
+                        <div class="ab-finance-shift-info-row">
+                            <span class="ab-finance-label">\u0417\u043c\u0456\u043d\u0430:</span>
+                            <span class="ab-finance-value ab-finance-accent">${shiftLabel}</span>
+                        </div>
+                        <div class="ab-finance-shift-info-row">
+                            <span class="ab-finance-label">\u0413\u0440\u0430\u0444\u0456\u043a:</span>
+                            <span class="ab-finance-value ab-finance-shift-time-display">${shiftTime}</span>
+                        </div>
+                    </div>
+                    <div class="ab-finance-divider"></div>
                     <div class="ab-finance-row">
                         <span class="ab-finance-label">Credits</span>
                         ${creditsDisplay}
-                    </div>
-                    <div class="ab-finance-row">
-                        <span class="ab-finance-label">Period</span>
-                        <span class="ab-finance-value" style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${periodDisplay}">${periodDisplay}</span>
-                    </div>
-                    <div class="ab-finance-btn-row">
-                        <button class="ab-finance-btn" id="ab-finance-set-period">Set</button>
-                        <button class="ab-finance-btn" id="ab-finance-clear-period">Clear</button>
                     </div>
                     <div class="ab-finance-divider"></div>
                     <div class="ab-finance-tx-container">
@@ -2421,18 +2766,41 @@ ${errorLines}
                 </div>
             `;
 
+            widget.querySelector("#ab-finance-shift-btn").onclick = (e) => {
+                e.stopPropagation();
+                const dd = widget.querySelector("#ab-finance-shift-dropdown");
+                dd.classList.toggle("ab-finance-shift-open");
+            };
+
+            widget.querySelectorAll(".ab-finance-shift-option").forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const key = btn.getAttribute("data-shift");
+                    FinanceManager.writePreset(key);
+                    widget.querySelector("#ab-finance-shift-dropdown").classList.remove("ab-finance-shift-open");
+                    App.handleFinanceRefresh();
+                };
+            });
+
+            document.addEventListener("pointerdown", (e) => {
+                const dd = widget.querySelector("#ab-finance-shift-dropdown");
+                if (dd && !dd.contains(e.target) && e.target.id !== "ab-finance-shift-btn" && !e.target.closest("#ab-finance-shift-btn")) {
+                    dd.classList.remove("ab-finance-shift-open");
+                }
+            });
+
             widget.querySelector("#ab-finance-toggle").onclick = () => {
-                const s = FinanceManager.readState();
-                s.collapsed = !s.collapsed;
-                FinanceManager.writeState(s);
-                widget.classList.toggle("ab-finance-collapsed", s.collapsed);
-                widget.classList.toggle("ab-finance-expanded", !s.collapsed);
-                const icon = s.collapsed
+                const ws = FinanceManager.readWidget();
+                ws.collapsed = !ws.collapsed;
+                FinanceManager.writeWidget(ws);
+                widget.classList.toggle("ab-finance-collapsed", ws.collapsed);
+                widget.classList.toggle("ab-finance-expanded", !ws.collapsed);
+                const icon = ws.collapsed
                     ? `<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>`
                     : `<svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>`;
                 widget.querySelector("#ab-finance-toggle").innerHTML = icon;
-                if (!s.collapsed) {
-                    const h = s.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
+                if (!ws.collapsed) {
+                    const h = ws.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
                     widget.style.height = h + "px";
                     const existingHandle = widget.querySelector("#ab-finance-resize-handle");
                     if (!existingHandle) {
@@ -2449,20 +2817,14 @@ ${errorLines}
             };
 
             widget.querySelector("#ab-finance-close").onclick = () => {
-                const s = FinanceManager.readState();
-                s.closed = true;
-                FinanceManager.writeState(s);
+                const ws = FinanceManager.readWidget();
+                ws.closed = true;
+                FinanceManager.writeWidget(ws);
                 widget.classList.add("ab-finance-hidden");
+                DomFinanceDataProvider._stopObserving();
             };
 
             widget.querySelector("#ab-finance-refresh").onclick = () => App.handleFinanceRefresh();
-
-            widget.querySelector("#ab-finance-set-period").onclick = () => CustomUI.showShiftPeriodModal();
-
-            widget.querySelector("#ab-finance-clear-period").onclick = () => {
-                FinanceManager.clearShiftPeriod();
-                CustomUI.updateFinanceWidget();
-            };
         },
 
         _initFinanceDrag: (widget) => {
@@ -2531,10 +2893,10 @@ ${errorLines}
                 handle.style.cursor = "nwse-resize";
                 handle.releasePointerCapture(handle.pointerId);
                 const rect = widget.getBoundingClientRect();
-                const s = FinanceManager.readState();
-                s.width = Math.round(rect.width);
-                s.height = Math.round(rect.height);
-                FinanceManager.writeState(s);
+                const ws = FinanceManager.readWidget();
+                ws.width = Math.round(rect.width);
+                ws.height = Math.round(rect.height);
+                FinanceManager.writeWidget(ws);
                 document.removeEventListener("pointermove", onPointerMove);
                 document.removeEventListener("pointerup", onPointerUp);
                 document.removeEventListener("pointercancel", onPointerUp);
@@ -2558,94 +2920,38 @@ ${errorLines}
         },
 
         showFinanceWidget: () => {
-            const s = FinanceManager.readState();
-            s.closed = false;
-            FinanceManager.writeState(s);
+            const ws = FinanceManager.readWidget();
+            ws.closed = false;
+            FinanceManager.writeWidget(ws);
             CustomUI.buildFinanceWidget();
-        },
-
-        showShiftPeriodModal: () => {
-            return new Promise(resolve => {
-                const existing = FinanceManager.getShiftPeriod();
-                const overlay = CustomUI.createOverlay();
-                overlay.innerHTML = `
-                    <div class="ab-modal small">
-                        <div class="ab-header">
-                            <h2>Shift Period</h2>
-                            <div class="ab-close-icon" id="ab-shift-close">
-                                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                            </div>
-                        </div>
-                        <div class="ab-content">
-                            <div class="ab-input-group">
-                                <label>Start Date & Time</label>
-                                <input type="datetime-local" id="ab-shift-start" value="${existing && existing.start ? existing.start : ""}">
-                            </div>
-                            <div class="ab-input-group">
-                                <label>End Date & Time</label>
-                                <input type="datetime-local" id="ab-shift-end" value="${existing && existing.end ? existing.end : ""}">
-                            </div>
-                            <div class="ab-row">
-                                <button class="ab-btn primary" id="ab-shift-apply">Apply</button>
-                                <button class="ab-btn" id="ab-shift-cancel">Cancel</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-
-                document.getElementById("ab-shift-apply").onclick = () => {
-                    const start = document.getElementById("ab-shift-start").value;
-                    const end = document.getElementById("ab-shift-end").value;
-                    if (!start || !end) {
-                        CustomUI.showAlert("Both start and end are required.");
-                        return;
-                    }
-                    if (new Date(start) >= new Date(end)) {
-                        CustomUI.showAlert("Start must be before end.");
-                        return;
-                    }
-                    FinanceManager.setShiftPeriod(start, end);
-                    CustomUI.closeOverlay(overlay);
-                    CustomUI.updateFinanceWidget();
-                    resolve(true);
-                };
-
-                document.getElementById("ab-shift-cancel").onclick = () => {
-                    CustomUI.closeOverlay(overlay);
-                    resolve(false);
-                };
-
-                document.getElementById("ab-shift-close").onclick = () => {
-                    CustomUI.closeOverlay(overlay);
-                    resolve(false);
-                };
-            });
         },
 
         updateFinanceWidget: () => {
             const widget = document.getElementById("ab-finance-widget");
             if (!widget) return;
-            const state = FinanceManager.getCachedState();
-            CustomUI._renderFinanceWidget(widget, state);
-            widget.classList.toggle("ab-finance-collapsed", state.collapsed);
-            widget.classList.toggle("ab-finance-expanded", !state.collapsed);
+            const dp = CustomUI._financeProvider || MockFinanceDataProvider;
+            const model = dp.getCurrentModel();
+            const ws = FinanceManager.readWidget();
+            CustomUI._renderFinanceWidget(widget, model, ws);
+            widget.classList.toggle("ab-finance-collapsed", ws.collapsed);
+            widget.classList.toggle("ab-finance-expanded", !ws.collapsed);
 
-            const w = state.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH;
+            const w = ws.width || CONFIG.FINANCE_WIDGET_SIZE.WIDTH;
             widget.style.width = w + "px";
-            if (!state.collapsed) {
-                const h = state.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
+            if (!ws.collapsed) {
+                const h = ws.height || CONFIG.FINANCE_WIDGET_SIZE.EXPANDED_HEIGHT;
                 widget.style.height = h + "px";
             } else {
                 widget.style.height = "";
             }
 
             const existingHandle = widget.querySelector("#ab-finance-resize-handle");
-            if (!state.collapsed && !existingHandle) {
+            if (!ws.collapsed && !existingHandle) {
                 const handle = document.createElement("div");
                 handle.id = "ab-finance-resize-handle";
                 widget.appendChild(handle);
                 CustomUI._initFinanceResize(widget);
-            } else if (state.collapsed && existingHandle) {
+            } else if (ws.collapsed && existingHandle) {
                 existingHandle.remove();
             }
         }
@@ -2805,10 +3111,15 @@ ${errorLines}
                 refreshBtn.disabled = true;
                 refreshBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:currentColor;animation:ab-spin 1s linear infinite"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Loading...`;
             }
-            DataProvider.invalidate();
-            const docs = DataProvider.refresh(CustomUI.activeProfileKey).docs;
-            await FinanceManager.fetchFinanceData(docs);
+            const dp = CustomUI._financeProvider || MockFinanceDataProvider;
+            if (typeof dp.refresh === "function") {
+                await dp.refresh();
+            }
             CustomUI.updateFinanceWidget();
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg> Refresh`;
+            }
         },
 
         openMenu: async () => {
@@ -2820,7 +3131,9 @@ ${errorLines}
         start: () => {
             CustomUI.injectCSS();
             CustomUI.initFloatingButton();
-            CustomUI.buildFinanceWidget();
+            CustomUI.buildFinanceWidget(DomFinanceDataProvider);
+            DomFinanceDataProvider.refresh();
+            DomFinanceDataProvider._startObserving();
 
             if (!window.__AB_MONITOR_SET__) {
                 window.__AB_MONITOR_SET__ = true;

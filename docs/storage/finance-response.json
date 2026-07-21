@@ -1,0 +1,32 @@
+{
+  "total": 15.9,
+  "from": "2026-06-21",
+  "to": "2026-07-21",
+  "list": [
+    { "date": 1782558221000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailSend" },
+    { "date": 1782365023000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782364988000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782354301000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782329408000, "ladyID": 812510, "name": "Lilia", "sum": 0.0, "userID": 1424875, "operation": "TextChatBonusCoins" },
+    { "date": 1782329347000, "ladyID": 812510, "name": "Lilia", "sum": 0.0, "userID": 1424875, "operation": "TextChatBonusCoins" },
+    { "date": 1782254408000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782252881000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782252082000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782085590000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "TextChat" },
+    { "date": 1782085578000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "TextChat" },
+    { "date": 1782085578000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "VideoChat" },
+    { "date": 1782085475000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "TextChat" },
+    { "date": 1782085434000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "VideoChat" },
+    { "date": 1782085434000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "TextChat" },
+    { "date": 1782081882000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 884829, "operation": "EmailRead" },
+    { "date": 1782081855000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "TextChat" },
+    { "date": 1782081282000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 877681, "operation": "TextChat" },
+    { "date": 1782074022000, "ladyID": 812510, "name": "Lilia", "sum": 0.3, "isFinish": true, "userID": 827550, "operation": "TextChatSatellite" },
+    { "date": 1781998560000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 807268, "operation": "VideoChat" },
+    { "date": 1781998560000, "ladyID": 812510, "name": "Lilia", "sum": 0.15, "isFinish": true, "userID": 807268, "operation": "TextChat" },
+    { "date": 1781998474000, "ladyID": 812510, "name": "Lilia", "sum": 0.3, "isFinish": true, "userID": 807268, "operation": "VideoChat" },
+    { "date": 1781998474000, "ladyID": 812510, "name": "Lilia", "sum": 0.3, "isFinish": true, "userID": 807268, "operation": "TextChat" },
+    { "date": 1781994977000, "ladyID": 812510, "name": "Lilia", "sum": 1.5, "userID": 798046, "operation": "EmailRead" }
+  ],
+  "success": true
+}
