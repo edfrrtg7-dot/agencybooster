@@ -15,6 +15,7 @@
 import { FinanceController, FinanceState, FinanceStateListener } from "./finance-controller";
 import { FinanceTransaction } from "./finance-mapper";
 import { FinanceShift, ShiftType } from "./finance-shift";
+import { COMPANION_LOGO_SVG } from "./brand-logo";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,10 +142,19 @@ export class FinanceWidget {
         dragHandle.className = `${this.classPrefix}-header`;
         dragHandle.id = `${this.classPrefix}-drag-handle`;
 
-        // Title
+        // Title with logo
         const title = document.createElement("div");
         title.className = `${this.classPrefix}-header-title`;
-        title.textContent = "Finance";
+
+        const logo = document.createElement("span");
+        logo.className = `${this.classPrefix}-logo`;
+        logo.innerHTML = COMPANION_LOGO_SVG;
+
+        const titleText = document.createElement("span");
+        titleText.textContent = "Finance";
+
+        title.appendChild(logo);
+        title.appendChild(titleText);
 
         // Header actions
         const actions = document.createElement("div");

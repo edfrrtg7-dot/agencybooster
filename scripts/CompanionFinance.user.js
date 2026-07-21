@@ -700,6 +700,12 @@
     }
   };
 
+  // ../src/companion/brand-logo.ts
+  var COMPANION_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 505 494" fill="none">
+  <path d="M2175 4453 c-132 -21 -369 -81 -453 -114 -402 -159 -744 -435 -977 -789 -135 -205 -251 -468 -296 -670 -4 -19 -14 -66 -23 -105 -35 -153 -52 -408 -37 -551 47 -444 167 -752 431 -1109 115 -155 392 -405 538 -486 27 -14 66 -37 88 -51 167 -102 460 -196 741 -237 92 -14 363 -14 473 -1 115 14 233 41 223 50 -4 5 -87 10 -183 13 -163 4 -184 7 -309 42 -276 76 -447 169 -656 358 -49 45 -103 97 -120 116 -16 19 -37 42 -46 51 -19 20 -149 214 -149 223 0 4 -18 36 -40 72 -22 36 -40 70 -40 75 0 6 -4 10 -8 10 -5 0 -9 6 -10 13 -1 6 -19 64 -41 128 -36 106 -79 267 -96 364 -21 116 -10 419 20 572 14 70 73 267 95 318 116 270 267 484 454 644 217 185 473 315 730 369 108 23 144 26 331 27 185 0 223 -3 315 -23 234 -53 435 -132 648 -256 63 -37 92 -48 123 -48 78 1 172 66 183 127 10 53 -31 111 -194 276 -152 153 -210 200 -340 275 -36 21 -68 43 -72 48 -5 7 -8 7 -8 1 0 -6 -3 -6 -8 1 -22 32 -233 135 -363 177 -95 31 -190 54 -369 88 -99 18 -447 20 -555 2z" transform="translate(0,494) scale(0.1,-0.1)" fill="#2F6BFF"/>
+</svg>`;
+  var COMPANION_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(COMPANION_LOGO_SVG)}`;
+
   // ../src/companion/finance-widget.ts
   var DEFAULT_CLASS_PREFIX = "ab-finance";
   var MIN_WIDTH = 280;
@@ -895,7 +901,13 @@
       dragHandle.id = `${this.classPrefix}-drag-handle`;
       const title = document.createElement("div");
       title.className = `${this.classPrefix}-header-title`;
-      title.textContent = "Finance";
+      const logo = document.createElement("span");
+      logo.className = `${this.classPrefix}-logo`;
+      logo.innerHTML = COMPANION_LOGO_SVG;
+      const titleText = document.createElement("span");
+      titleText.textContent = "Finance";
+      title.appendChild(logo);
+      title.appendChild(titleText);
       const actions = document.createElement("div");
       actions.className = `${this.classPrefix}-header-actions`;
       const shiftBtn = document.createElement("button");
@@ -1142,12 +1154,12 @@
     min-height: 200px;
     max-width: 700px;
     max-height: 600px;
-    background: #1a1a2e;
+    background: #1F2235;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
     z-index: 2147483646;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #e0e0e0;
+    color: #E0E0E0;
     box-shadow: 0 8px 32px 0 rgba(0,0,0,0.5);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -1195,10 +1207,25 @@
     font-weight: 600;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     color: rgba(255,255,255,0.5);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+/* Companion Logo */
+.ab-finance-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.ab-finance-logo svg {
+    width: 100%;
+    height: 100%;
 }
 
 .ab-finance-header-actions {
@@ -1223,7 +1250,7 @@
 }
 
 .ab-finance-header-actions button:hover {
-    color: #e0e0e0;
+    color: #E0E0E0;
     background: rgba(255,255,255,0.1);
 }
 
@@ -1264,26 +1291,26 @@
 .ab-finance-value {
     font-size: 12px;
     font-weight: 600;
-    color: #e0e0e0;
+    color: #E0E0E0;
 }
 
 .ab-finance-value.ab-finance-accent {
-    color: #4fc3f7;
+    color: #59AFFF;
 }
 
 .ab-finance-value.ab-finance-success {
-    color: #81c784;
+    color: #81C784;
 }
 
 .ab-finance-value.ab-finance-warning {
-    color: #ffb74d;
+    color: #FFB74D;
 }
 
 /* Button */
 .ab-finance-btn {
     flex: 1;
     background: rgba(255,255,255,0.05);
-    color: #e0e0e0;
+    color: #E0E0E0;
     border: 1px solid rgba(255,255,255,0.1);
     padding: 4px 6px;
     border-radius: 4px;
@@ -1308,13 +1335,13 @@
 }
 
 .ab-finance-btn.primary {
-    background: #4fc3f7;
-    border-color: #4fc3f7;
-    color: #fff;
+    background: #2F6BFF;
+    border-color: #2F6BFF;
+    color: #FFFFFF;
 }
 
 .ab-finance-btn.primary:hover {
-    background: #29b6f6;
+    background: #4A82FF;
 }
 
 .ab-finance-btn:disabled {
@@ -1340,7 +1367,7 @@
 /* Error */
 .ab-finance-error {
     text-align: center;
-    color: #ef5350;
+    color: #EF5350;
     font-size: 10px;
     padding: 6px 0;
 }
@@ -1374,7 +1401,7 @@
     font-size: 10px;
     padding: 3px 0;
     border-bottom: 1px solid rgba(255,255,255,0.03);
-    color: #e0e0e0;
+    color: #E0E0E0;
 }
 
 .ab-finance-tx-cell {
@@ -1407,7 +1434,7 @@
 }
 
 .ab-finance-shift-btn:hover {
-    color: #e0e0e0;
+    color: #E0E0E0;
     background: rgba(255,255,255,0.1);
 }
 
@@ -1417,7 +1444,7 @@
     top: 100%;
     right: 0;
     margin-top: 4px;
-    background: #1a1a2e;
+    background: #1F2235;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     padding: 4px;
@@ -1444,7 +1471,7 @@
     padding: 6px 10px;
     cursor: pointer;
     text-align: left;
-    color: #e0e0e0;
+    color: #E0E0E0;
     transition: all 0.15s;
     width: 100%;
 }
@@ -1454,13 +1481,13 @@
 }
 
 .ab-finance-shift-option.active {
-    background: #4fc3f7;
-    border-color: #4fc3f7;
-    color: #fff;
+    background: #2F6BFF;
+    border-color: #2F6BFF;
+    color: #FFFFFF;
 }
 
 .ab-finance-shift-option.active:hover {
-    background: #29b6f6;
+    background: #4A82FF;
 }
 
 .ab-finance-shift-name {
