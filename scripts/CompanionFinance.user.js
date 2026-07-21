@@ -793,6 +793,8 @@
   var MIN_HEIGHT = 200;
   var MAX_WIDTH = 700;
   var MAX_HEIGHT = 600;
+  var COLLAPSED_WIDTH = 330;
+  var COLLAPSED_HEIGHT = 44;
   var STORAGE_KEY2 = "ab-finance-widget-state";
   var DEFAULT_STATE = {
     x: 24,
@@ -835,11 +837,8 @@
       __publicField(this, "collapseBtn", null);
       __publicField(this, "closeBtn", null);
       __publicField(this, "destroyed", false);
-      // Window state model
+      // Window state model — single source of truth
       __publicField(this, "win");
-      // Saved size for restore after collapse (pre-collapse dimensions)
-      __publicField(this, "savedWidth");
-      __publicField(this, "savedHeight");
       // Keyboard handler
       __publicField(this, "boundOnKeyDown", null);
       // Drag state
@@ -914,6 +913,10 @@
             header.style.cursor = "grab";
           }
         }
+        if (this.root) {
+          const rect = this.root.getBoundingClientRect();
+          this.win = { ...this.win, x: Math.round(rect.left), y: Math.round(rect.top) };
+        }
         this.persistState();
         this.removeDragListeners();
       });
@@ -943,11 +946,17 @@
         const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, this.resizeOrigH + dy));
         this.root.style.width = newW + "px";
         this.root.style.height = newH + "px";
-        this.savedWidth = newW;
-        this.savedHeight = newH;
       });
       __publicField(this, "onResizePointerUp", () => {
         this.isResizing = false;
+        if (this.root) {
+          const rect = this.root.getBoundingClientRect();
+          this.win = {
+            ...this.win,
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          };
+        }
         this.persistState();
         this.removeResizeListeners();
       });
@@ -996,8 +1005,6 @@
       this.onClose = config.onClose;
       const saved = loadState() ?? DEFAULT_STATE;
       this.win = { ...saved };
-      this.savedWidth = saved.width;
-      this.savedHeight = saved.height;
       this.unsubscribe = this.controller.subscribe(this.onStateChange);
       this.render(this.controller.getState());
       this.controller.refresh();
@@ -1009,10 +1016,10 @@
     destroy() {
       if (this.destroyed) return;
       this.destroyed = true;
+      this.cancelDrag();
+      this.cancelResize();
       this.unsubscribe();
       this.controller.cancelPending();
-      this.removeDragListeners();
-      this.removeResizeListeners();
       this.removeKeyboardListener();
       this.root?.remove();
       this.root = null;
@@ -1054,58 +1061,42 @@
       return this.win.collapsed;
     }
     // -------------------------------------------------------------------------
-    // Collapse / Expand — JS controls geometry
+    // Collapse / Expand — two independent layouts
     // -------------------------------------------------------------------------
-    /** Expand the widget if collapsed. Restores exact previous dimensions. */
+    /** Expand the widget. Restores exact previous dimensions from state. */
     expand() {
       if (!this.win.collapsed || !this.root || !this.contentEl) return;
-      this.win = { ...this.win, collapsed: false };
-      this.root.classList.remove(`${this.classPrefix}-collapsed`);
-      this.root.style.width = this.savedWidth + "px";
-      this.root.style.height = this.savedHeight + "px";
-      this.root.style.overflow = "";
+      this.contentEl.style.display = "";
       this.contentEl.style.overflow = "";
       this.contentEl.style.height = "";
       this.contentEl.style.minHeight = "";
       this.contentEl.style.padding = "";
+      this.root.style.width = this.win.width + "px";
+      this.root.style.height = this.win.height + "px";
+      this.root.style.overflow = "";
+      this.win = { ...this.win, collapsed: false };
+      this.root.classList.remove(`${this.classPrefix}-collapsed`);
       this.updateCollapseButton();
       this.persistState();
     }
     /**
-     * Collapse the widget to compact title bar.
-     * Measures the header's natural dimensions, then sets explicit pixel values.
-     * Top-left position never changes.
+     * Collapse the widget to a compact title bar.
+     * Uses fixed constants — no DOM measurement.
      */
     collapse() {
       if (this.win.collapsed || !this.root || !this.contentEl) return;
       const rect = this.root.getBoundingClientRect();
-      this.savedWidth = rect.width;
-      this.savedHeight = rect.height;
-      const header = this.root.querySelector(`.${this.classPrefix}-header`);
-      if (!header) return;
-      const prevW = this.root.style.width;
-      const prevH = this.root.style.height;
-      this.root.style.width = "";
-      this.root.style.height = "";
+      this.win = {
+        ...this.win,
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        collapsed: true
+      };
+      this.contentEl.style.display = "none";
+      this.root.style.width = COLLAPSED_WIDTH + "px";
+      this.root.style.height = COLLAPSED_HEIGHT + "px";
       this.root.style.overflow = "hidden";
-      this.contentEl.style.overflow = "hidden";
-      this.contentEl.style.height = "0";
-      this.contentEl.style.minHeight = "0";
-      this.contentEl.style.padding = "0";
-      const headerRect = header.getBoundingClientRect();
-      const collapsedW = Math.ceil(headerRect.width);
-      const collapsedH = Math.ceil(headerRect.height);
-      this.root.style.width = prevW;
-      this.root.style.height = prevH;
-      this.win = { ...this.win, collapsed: true };
       this.root.classList.add(`${this.classPrefix}-collapsed`);
-      this.root.style.width = collapsedW + "px";
-      this.root.style.height = collapsedH + "px";
-      this.root.style.overflow = "hidden";
-      this.contentEl.style.overflow = "hidden";
-      this.contentEl.style.height = "0";
-      this.contentEl.style.minHeight = "0";
-      this.contentEl.style.padding = "0";
       this.updateCollapseButton();
       this.persistState();
     }
@@ -1121,16 +1112,7 @@
     // State persistence
     // -------------------------------------------------------------------------
     persistState() {
-      if (!this.root) return;
-      const rect = this.root.getBoundingClientRect();
-      saveState({
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: this.win.collapsed ? this.savedWidth : Math.round(rect.width),
-        height: this.win.collapsed ? this.savedHeight : Math.round(rect.height),
-        collapsed: this.win.collapsed,
-        hidden: this.win.hidden
-      });
+      saveState({ ...this.win });
     }
     // -------------------------------------------------------------------------
     // Keyboard shortcuts
@@ -1166,12 +1148,19 @@
       root.id = `${this.classPrefix}-widget`;
       root.style.left = saved.x + "px";
       root.style.top = saved.y + "px";
-      root.style.width = saved.width + "px";
-      root.style.height = saved.height + "px";
       root.style.bottom = "auto";
       root.style.right = "auto";
       if (saved.hidden) {
         root.style.display = "none";
+      }
+      if (saved.collapsed) {
+        root.classList.add(`${this.classPrefix}-collapsed`);
+        root.style.width = COLLAPSED_WIDTH + "px";
+        root.style.height = COLLAPSED_HEIGHT + "px";
+        root.style.overflow = "hidden";
+      } else {
+        root.style.width = saved.width + "px";
+        root.style.height = saved.height + "px";
       }
       const dragHandle = document.createElement("div");
       dragHandle.className = `${this.classPrefix}-header`;
@@ -1207,7 +1196,7 @@
       const collapseBtn = document.createElement("button");
       collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
       collapseBtn.title = "Collapse";
-      collapseBtn.textContent = "\u25BC";
+      collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
       const closeBtn = document.createElement("button");
       closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
       closeBtn.title = "Close";
@@ -1221,6 +1210,9 @@
       dragHandle.appendChild(actions);
       const content = document.createElement("div");
       content.className = `${this.classPrefix}-body`;
+      if (saved.collapsed) {
+        content.style.display = "none";
+      }
       const resizeHandle = document.createElement("div");
       resizeHandle.className = `${this.classPrefix}-resize-handle`;
       root.appendChild(dragHandle);
@@ -1241,10 +1233,6 @@
       collapseBtn.addEventListener("click", this.onCollapseClick);
       closeBtn.addEventListener("click", this.onCloseClick);
       this.container.appendChild(root);
-      if (saved.collapsed) {
-        void root.offsetHeight;
-        this.collapse();
-      }
       if (!saved.hidden) {
         this.installKeyboardListener();
       }
@@ -1373,8 +1361,7 @@
       label1.textContent = "Date:";
       const value1 = document.createElement("span");
       value1.className = `${this.classPrefix}-value`;
-      const today = /* @__PURE__ */ new Date();
-      value1.textContent = FinanceShift.formatDate(today);
+      value1.textContent = FinanceShift.formatDate(/* @__PURE__ */ new Date());
       row1.appendChild(label1);
       row1.appendChild(value1);
       const row2 = document.createElement("div");
@@ -1506,7 +1493,7 @@
     overflow: hidden;
 }
 
-/* Collapsed \u2014 JS controls geometry via explicit pixel dimensions.
+/* Collapsed \u2014 JS sets explicit dimensions via COLLAPSED_WIDTH/HEIGHT constants.
    CSS only hides the resize handle and adjusts header border. */
 .ab-finance.collapsed .ab-finance-resize-handle {
     display: none;

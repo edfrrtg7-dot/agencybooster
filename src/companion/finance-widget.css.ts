@@ -32,7 +32,7 @@ export const FINANCE_WIDGET_CSS = `
     overflow: hidden;
 }
 
-/* Collapsed — JS controls geometry via explicit pixel dimensions.
+/* Collapsed — JS sets explicit dimensions via COLLAPSED_WIDTH/HEIGHT constants.
    CSS only hides the resize handle and adjusts header border. */
 .ab-finance.collapsed .ab-finance-resize-handle {
     display: none;

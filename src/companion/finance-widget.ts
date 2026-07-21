@@ -8,6 +8,9 @@
  * Window management uses a single FinanceWindowState model.
  * JavaScript controls geometry; CSS controls appearance only.
  *
+ * Two independent layouts: Expanded and Collapsed.
+ * Collapsed uses fixed constants — no DOM measurement.
+ *
  * Non-responsibilities:
  *   - HTTP communication (see FinanceApiClient)
  *   - Response mapping (see FinanceMapper)
@@ -54,6 +57,9 @@ const MIN_WIDTH = 280;
 const MIN_HEIGHT = 200;
 const MAX_WIDTH = 700;
 const MAX_HEIGHT = 600;
+
+const COLLAPSED_WIDTH = 330;
+const COLLAPSED_HEIGHT = 44;
 
 const STORAGE_KEY = "ab-finance-widget-state";
 
@@ -120,12 +126,8 @@ export class FinanceWidget {
     private closeBtn: HTMLButtonElement | null = null;
     private destroyed = false;
 
-    // Window state model
+    // Window state model — single source of truth
     private win: FinanceWindowState;
-
-    // Saved size for restore after collapse (pre-collapse dimensions)
-    private savedWidth: number;
-    private savedHeight: number;
 
     // Keyboard handler
     private boundOnKeyDown: ((e: KeyboardEvent) => void) | null = null;
@@ -157,8 +159,6 @@ export class FinanceWidget {
         // Load persisted state
         const saved = loadState() ?? DEFAULT_STATE;
         this.win = { ...saved };
-        this.savedWidth = saved.width;
-        this.savedHeight = saved.height;
 
         this.unsubscribe = this.controller.subscribe(this.onStateChange);
         this.render(this.controller.getState());
@@ -173,10 +173,10 @@ export class FinanceWidget {
     destroy(): void {
         if (this.destroyed) return;
         this.destroyed = true;
+        this.cancelDrag();
+        this.cancelResize();
         this.unsubscribe();
         this.controller.cancelPending();
-        this.removeDragListeners();
-        this.removeResizeListeners();
         this.removeKeyboardListener();
         this.root?.remove();
         this.root = null;
@@ -224,74 +224,58 @@ export class FinanceWidget {
     }
 
     // -------------------------------------------------------------------------
-    // Collapse / Expand — JS controls geometry
+    // Collapse / Expand — two independent layouts
     // -------------------------------------------------------------------------
 
-    /** Expand the widget if collapsed. Restores exact previous dimensions. */
+    /** Expand the widget. Restores exact previous dimensions from state. */
     expand(): void {
         if (!this.win.collapsed || !this.root || !this.contentEl) return;
-        this.win = { ...this.win, collapsed: false };
-        this.root.classList.remove(`${this.classPrefix}-collapsed`);
-        this.root.style.width = this.savedWidth + "px";
-        this.root.style.height = this.savedHeight + "px";
-        this.root.style.overflow = "";
+
+        // Restore body
+        this.contentEl.style.display = "";
         this.contentEl.style.overflow = "";
         this.contentEl.style.height = "";
         this.contentEl.style.minHeight = "";
         this.contentEl.style.padding = "";
+
+        // Restore geometry from state
+        this.root.style.width = this.win.width + "px";
+        this.root.style.height = this.win.height + "px";
+        this.root.style.overflow = "";
+
+        // Update state
+        this.win = { ...this.win, collapsed: false };
+        this.root.classList.remove(`${this.classPrefix}-collapsed`);
         this.updateCollapseButton();
         this.persistState();
     }
 
     /**
-     * Collapse the widget to compact title bar.
-     * Measures the header's natural dimensions, then sets explicit pixel values.
-     * Top-left position never changes.
+     * Collapse the widget to a compact title bar.
+     * Uses fixed constants — no DOM measurement.
      */
     collapse(): void {
         if (this.win.collapsed || !this.root || !this.contentEl) return;
 
-        // Save current expanded dimensions before collapsing
+        // Save current expanded dimensions to state
         const rect = this.root.getBoundingClientRect();
-        this.savedWidth = rect.width;
-        this.savedHeight = rect.height;
+        this.win = {
+            ...this.win,
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            collapsed: true,
+        };
 
-        // Measure header natural dimensions
-        const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
-        if (!header) return;
+        // Hide body completely
+        this.contentEl.style.display = "none";
 
-        // Temporarily remove constraints to measure header natural size
-        const prevW = this.root.style.width;
-        const prevH = this.root.style.height;
-        this.root.style.width = "";
-        this.root.style.height = "";
+        // Set fixed collapsed dimensions
+        this.root.style.width = COLLAPSED_WIDTH + "px";
+        this.root.style.height = COLLAPSED_HEIGHT + "px";
         this.root.style.overflow = "hidden";
 
-        // Hide body content so it doesn't influence header width
-        this.contentEl.style.overflow = "hidden";
-        this.contentEl.style.height = "0";
-        this.contentEl.style.minHeight = "0";
-        this.contentEl.style.padding = "0";
-
-        const headerRect = header.getBoundingClientRect();
-        const collapsedW = Math.ceil(headerRect.width);
-        const collapsedH = Math.ceil(headerRect.height);
-
-        // Restore root dimensions, then apply collapsed size
-        this.root.style.width = prevW;
-        this.root.style.height = prevH;
-
-        // Apply explicit collapsed dimensions
-        this.win = { ...this.win, collapsed: true };
+        // Update UI
         this.root.classList.add(`${this.classPrefix}-collapsed`);
-        this.root.style.width = collapsedW + "px";
-        this.root.style.height = collapsedH + "px";
-        this.root.style.overflow = "hidden";
-        this.contentEl.style.overflow = "hidden";
-        this.contentEl.style.height = "0";
-        this.contentEl.style.minHeight = "0";
-        this.contentEl.style.padding = "0";
-
         this.updateCollapseButton();
         this.persistState();
     }
@@ -310,16 +294,7 @@ export class FinanceWidget {
     // -------------------------------------------------------------------------
 
     private persistState(): void {
-        if (!this.root) return;
-        const rect = this.root.getBoundingClientRect();
-        saveState({
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: this.win.collapsed ? this.savedWidth : Math.round(rect.width),
-            height: this.win.collapsed ? this.savedHeight : Math.round(rect.height),
-            collapsed: this.win.collapsed,
-            hidden: this.win.hidden,
-        });
+        saveState({ ...this.win });
     }
 
     // -------------------------------------------------------------------------
@@ -379,16 +354,24 @@ export class FinanceWidget {
         root.className = this.classPrefix;
         root.id = `${this.classPrefix}-widget`;
 
-        // JS controls geometry — set explicit dimensions from saved state
+        // JS controls geometry
         root.style.left = saved.x + "px";
         root.style.top = saved.y + "px";
-        root.style.width = saved.width + "px";
-        root.style.height = saved.height + "px";
         root.style.bottom = "auto";
         root.style.right = "auto";
 
         if (saved.hidden) {
             root.style.display = "none";
+        }
+
+        if (saved.collapsed) {
+            root.classList.add(`${this.classPrefix}-collapsed`);
+            root.style.width = COLLAPSED_WIDTH + "px";
+            root.style.height = COLLAPSED_HEIGHT + "px";
+            root.style.overflow = "hidden";
+        } else {
+            root.style.width = saved.width + "px";
+            root.style.height = saved.height + "px";
         }
 
         // Drag handle (header)
@@ -442,7 +425,7 @@ export class FinanceWidget {
         const collapseBtn = document.createElement("button");
         collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
         collapseBtn.title = "Collapse";
-        collapseBtn.textContent = "\u25BC";
+        collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
 
         // Close button
         const closeBtn = document.createElement("button");
@@ -462,6 +445,10 @@ export class FinanceWidget {
         // Content
         const content = document.createElement("div");
         content.className = `${this.classPrefix}-body`;
+
+        if (saved.collapsed) {
+            content.style.display = "none";
+        }
 
         // Resize handle
         const resizeHandle = document.createElement("div");
@@ -490,13 +477,6 @@ export class FinanceWidget {
 
         this.container.appendChild(root);
 
-        // Apply collapsed state from saved
-        if (saved.collapsed) {
-            // Force layout to get accurate header dimensions
-            void root.offsetHeight;
-            this.collapse();
-        }
-
         // Install keyboard listener
         if (!saved.hidden) {
             this.installKeyboardListener();
@@ -522,7 +502,6 @@ export class FinanceWidget {
     private onDragPointerDown = (e: PointerEvent): void => {
         if (this.destroyed || !this.root) return;
 
-        // Don't drag when clicking buttons or interactive elements
         const target = e.target as HTMLElement;
         if (target.closest("button") || target.closest("select") || target.closest("input")) {
             return;
@@ -537,21 +516,17 @@ export class FinanceWidget {
         this.dragOrigX = rect.left;
         this.dragOrigY = rect.top;
 
-        // Set cursor on header
         const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
         if (header) {
             header.style.cursor = "grabbing";
         }
 
-        // Create bound handlers for this drag session
         this.boundOnDragPointerMove = this.onDragPointerMove;
         this.boundOnDragPointerUp = this.onDragPointerUp;
 
         document.addEventListener("pointermove", this.boundOnDragPointerMove);
         document.addEventListener("pointerup", this.boundOnDragPointerUp);
         document.addEventListener("pointercancel", this.boundOnDragPointerUp);
-
-        // Also handle window blur to cancel drag if cursor leaves browser
         window.addEventListener("blur", this.boundOnDragPointerUp);
     };
 
@@ -571,7 +546,6 @@ export class FinanceWidget {
     private onDragPointerUp = (): void => {
         this.isDragging = false;
 
-        // Restore cursor on header
         if (this.root) {
             const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
             if (header) {
@@ -579,6 +553,11 @@ export class FinanceWidget {
             }
         }
 
+        // Persist new position
+        if (this.root) {
+            const rect = this.root.getBoundingClientRect();
+            this.win = { ...this.win, x: Math.round(rect.left), y: Math.round(rect.top) };
+        }
         this.persistState();
         this.removeDragListeners();
     };
@@ -640,14 +619,20 @@ export class FinanceWidget {
 
         this.root.style.width = newW + "px";
         this.root.style.height = newH + "px";
-
-        // Update saved dimensions for collapse restore
-        this.savedWidth = newW;
-        this.savedHeight = newH;
     };
 
     private onResizePointerUp = (): void => {
         this.isResizing = false;
+
+        // Persist new dimensions to state
+        if (this.root) {
+            const rect = this.root.getBoundingClientRect();
+            this.win = {
+                ...this.win,
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+            };
+        }
         this.persistState();
         this.removeResizeListeners();
     };
@@ -688,7 +673,6 @@ export class FinanceWidget {
 
     private onHeaderDoubleClick = (e: MouseEvent): void => {
         if (this.destroyed) return;
-        // Don't toggle if double-clicking a button
         const target = e.target as HTMLElement;
         if (target.closest("button")) return;
         this.toggleCollapse();
@@ -709,7 +693,6 @@ export class FinanceWidget {
         const def = FinanceShift.getDefinition(shift);
         this.shiftBtn.textContent = `${def.label} \u25BE`;
 
-        // Update active state in dropdown
         const options = this.shiftDropdown.querySelectorAll(`.${this.classPrefix}-shift-option`);
         options.forEach((opt) => {
             const htmlOpt = opt as HTMLElement;
@@ -761,20 +744,17 @@ export class FinanceWidget {
         const def = FinanceShift.getDefinition(state.shift);
         const allTransactions = state.data?.list ?? [];
 
-        // Smart filtering: handles night shift phases
         const { filtered, isWaiting } = FinanceShift.filterByShiftSmart(
             allTransactions,
             state.shift
         );
 
-        // Compute sum of filtered transactions
         const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
 
         // Shift info section
         const shiftInfo = document.createElement("div");
         shiftInfo.className = `${this.classPrefix}-shift-info`;
 
-        // Today row
         const row1 = document.createElement("div");
         row1.className = `${this.classPrefix}-shift-info-row`;
         const label1 = document.createElement("span");
@@ -782,12 +762,10 @@ export class FinanceWidget {
         label1.textContent = "Date:";
         const value1 = document.createElement("span");
         value1.className = `${this.classPrefix}-value`;
-        const today = new Date();
-        value1.textContent = FinanceShift.formatDate(today);
+        value1.textContent = FinanceShift.formatDate(new Date());
         row1.appendChild(label1);
         row1.appendChild(value1);
 
-        // Shift row
         const row2 = document.createElement("div");
         row2.className = `${this.classPrefix}-shift-info-row`;
         const label2 = document.createElement("span");
@@ -802,11 +780,9 @@ export class FinanceWidget {
         shiftInfo.appendChild(row1);
         shiftInfo.appendChild(row2);
 
-        // Divider
         const divider1 = document.createElement("div");
         divider1.className = `${this.classPrefix}-divider`;
 
-        // Credits row — sum of filtered transactions
         const creditsRow = document.createElement("div");
         creditsRow.className = `${this.classPrefix}-row`;
         const creditsLabel = document.createElement("span");
@@ -818,7 +794,6 @@ export class FinanceWidget {
         creditsRow.appendChild(creditsLabel);
         creditsRow.appendChild(creditsValue);
 
-        // Divider
         const divider2 = document.createElement("div");
         divider2.className = `${this.classPrefix}-divider`;
 
@@ -827,7 +802,6 @@ export class FinanceWidget {
         this.contentEl.appendChild(creditsRow);
         this.contentEl.appendChild(divider2);
 
-        // Night shift waiting state
         if (isWaiting) {
             const waitingMsg = this.createMessage(`Waiting for Night shift (${def.timeDisplay}).`);
             this.contentEl.appendChild(waitingMsg);
@@ -841,7 +815,6 @@ export class FinanceWidget {
             const txContainer = document.createElement("div");
             txContainer.className = `${this.classPrefix}-tx-container`;
 
-            // Header row: Time | Operation | Target ID | Credits
             const headerRow = document.createElement("div");
             headerRow.className = `${this.classPrefix}-tx-header`;
             headerRow.appendChild(this.createTxHeaderCell("Time"));
@@ -850,7 +823,6 @@ export class FinanceWidget {
             headerRow.appendChild(this.createTxHeaderCell("Credits"));
             txContainer.appendChild(headerRow);
 
-            // Transaction rows
             for (const tx of filtered) {
                 txContainer.appendChild(this.createTransactionRow(tx));
             }
@@ -878,7 +850,6 @@ export class FinanceWidget {
         const row = document.createElement("div");
         row.className = `${this.classPrefix}-tx-row`;
 
-        // Time: HH:mm
         const timeStr = FinanceShift.formatTime(tx.date);
 
         row.appendChild(this.createTxCell(timeStr));
