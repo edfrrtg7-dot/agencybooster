@@ -15,6 +15,20 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
+  // ../src/companion/dev.ts
+  var IS_DEV = (() => {
+    try {
+      return localStorage.getItem("ab-dev") !== null;
+    } catch {
+      return false;
+    }
+  })();
+  function diag(...args) {
+    if (IS_DEV) {
+      console.log("[Companion]", ...args);
+    }
+  }
+
   // ../src/companion/companion-app.ts
   var LAUNCHER_BUTTON_CSS = `
 #ab-companion-launcher {
@@ -120,11 +134,16 @@
     background: #81C784;
 }
 `;
-  var CompanionApp = class {
+  var _CompanionApp = class _CompanionApp {
     constructor() {
       __publicField(this, "modules", /* @__PURE__ */ new Map());
       __publicField(this, "launcher", null);
       __publicField(this, "moduleMenu", null);
+      __publicField(this, "started", false);
+      if (_CompanionApp.instance) {
+        throw new Error("CompanionApp is a singleton. Use CompanionApp.getInstance() or check existing instance.");
+      }
+      _CompanionApp.instance = this;
     }
     injectStyles() {
       const existing = document.getElementById("ab-companion-styles");
@@ -144,9 +163,11 @@
     }
     /** Start the Companion application and create the launcher UI. */
     start() {
-      if (this.launcher) return;
+      if (this.started) return;
+      this.started = true;
       this.injectStyles();
       this.createUI();
+      diag("initialized");
     }
     /** Get all registered modules. */
     getModules() {
@@ -236,6 +257,9 @@
       this.closeMenu();
     }
   };
+  /** Singleton guard — prevents multiple instances. */
+  __publicField(_CompanionApp, "instance", null);
+  var CompanionApp = _CompanionApp;
 
   // ../src/companion/finance-api-client.ts
   var FinanceApiError = class extends Error {
@@ -2133,6 +2157,7 @@
     controller = new FinanceController();
     widget = new FinanceWidget(controller);
     widget.hide();
+    diag("Finance created");
   }
   function createFinanceModule() {
     return {
@@ -2141,9 +2166,11 @@
       open() {
         ensureFinanceWidget();
         widget?.show();
+        diag("Finance shown");
       },
       close() {
         widget?.hide();
+        diag("Finance hidden");
       },
       get isOpen() {
         return widget?.isVisible ?? false;

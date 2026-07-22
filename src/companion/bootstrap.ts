@@ -13,6 +13,7 @@ import { CompanionModule } from "./companion-module";
 import { FinanceController } from "./finance-controller";
 import { FinanceWidget } from "./finance-widget";
 import { FINANCE_WIDGET_CSS } from "./finance-widget.css";
+import { diag } from "./dev";
 
 let app: CompanionApp | null = null;
 let widget: FinanceWidget | null = null;
@@ -42,6 +43,7 @@ function ensureFinanceWidget(): void {
     controller = new FinanceController();
     widget = new FinanceWidget(controller);
     widget.hide();
+    diag("Finance created");
 }
 
 function createFinanceModule(): CompanionModule {
@@ -51,9 +53,11 @@ function createFinanceModule(): CompanionModule {
         open(): void {
             ensureFinanceWidget();
             widget?.show();
+            diag("Finance shown");
         },
         close(): void {
             widget?.hide();
+            diag("Finance hidden");
         },
         get isOpen(): boolean {
             return widget?.isVisible ?? false;

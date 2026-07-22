@@ -12,6 +12,7 @@
  */
 
 import { CompanionModule } from "./companion-module";
+import { diag } from "./dev";
 
 // ---------------------------------------------------------------------------
 // CSS
@@ -127,9 +128,19 @@ const LAUNCHER_BUTTON_CSS = `
 // ---------------------------------------------------------------------------
 
 export class CompanionApp {
+    /** Singleton guard — prevents multiple instances. */
+    private static instance: CompanionApp | null = null;
+
     private readonly modules: Map<string, CompanionModule> = new Map();
     private launcher: HTMLButtonElement | null = null;
     private moduleMenu: HTMLDivElement | null = null;
+
+    constructor() {
+        if (CompanionApp.instance) {
+            throw new Error("CompanionApp is a singleton. Use CompanionApp.getInstance() or check existing instance.");
+        }
+        CompanionApp.instance = this;
+    }
     private injectStyles(): void {
         const existing = document.getElementById("ab-companion-styles");
         if (existing) return;
@@ -148,11 +159,15 @@ export class CompanionApp {
         this.modules.set(module.name, module);
     }
 
+    private started = false;
+
     /** Start the Companion application and create the launcher UI. */
     start(): void {
-        if (this.launcher) return;
+        if (this.started) return;
+        this.started = true;
         this.injectStyles();
         this.createUI();
+        diag("initialized");
     }
 
     /** Get all registered modules. */
