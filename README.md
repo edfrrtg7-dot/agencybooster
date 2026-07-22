@@ -2,9 +2,21 @@
 
 A modular productivity platform for GoldenBride CRM.
 
+## What is Companion?
+
+Companion is a modular productivity platform for GoldenBride CRM. It provides floating UI widgets for finance data, translation, statistics, and other operational tools. Currently deployed as a Tampermonkey userscript, with a Chrome Extension (Manifest V3) as the production target.
+
 ## Mission
 
 Companion transforms the GoldenBride CRM workflow from manual, repetitive tasks into an intelligent, automated experience. Every second saved compounds into meaningful productivity gains.
+
+## Features
+
+- **Finance** — Real-time transaction data with smart shift filtering (Morning/Day/Night)
+- **Translator** — On-demand translation (planned)
+- **Statistics** — Data insights and analytics (planned)
+- **Modular** — Easy to add new features as independent modules
+- **Persistent** — Window positions, sizes, and states persist across sessions
 
 ## Architecture
 
@@ -14,63 +26,51 @@ graph TD
     B --> C[Companion Platform]
     C --> D[CompanionApp]
     D --> E[ModuleManager]
-    E --> F[Finance]
-    E --> G[Translator]
-    E --> H[Statistics]
-    E --> I[Settings]
-    E --> J[Future Modules]
-
-    D --> LAUNCHER[Launcher UI]
-    D --> MENU[Module Menu]
-
-    F --> FW[FinanceWidget]
-    FW --> CW[CompanionWindow]
-    CW --> DRAG[Drag]
-    CW --> RESIZE[Resize]
-    CW --> COLLAPSE[Collapse]
-    CW --> PERSIST[Persist]
+    D --> F[CompanionWindow]
+    D --> G[Diagnostics]
+    C --> H[Modules]
+    H --> I[Finance]
+    H --> J[Translator]
+    H --> K[Statistics]
+    H --> L[Settings]
+    H --> M[Future Modules]
 ```
 
-## Components
+### Core Components
 
 | Component | Responsibility |
 |-----------|----------------|
-| [CompanionApp](src/companion/companion-app.ts) | Singleton launcher, menu UI, delegates to ModuleManager |
-| [ModuleManager](src/companion/module-manager.ts) | Module registration and lifecycle |
-| [CompanionWindow](src/companion/companion-window.ts) | Base class for draggable, resizable windows |
-| [Finance](src/companion/finance-widget.ts) | Live finance data with shift filtering |
+| CompanionApp | Singleton launcher, menu UI, delegates to ModuleManager |
+| ModuleManager | Module registration and lifecycle management |
+| CompanionWindow | Base class for draggable, resizable, collapsible windows |
+| Diagnostics | Development mode logging |
 
-## Folder Structure
+### Current Modules
 
-```
-Companion/
-├── src/companion/       Source code
-├── scripts/             Built output
-├── agencybooster-devtoolkit/  Build tooling
-├── assets/              Static resources
-├── docs/                Documentation
-├── LICENSE              License
-├── NOTICE               Copyright notice
-└── README.md            This file
-```
+| Module | Status |
+|--------|--------|
+| Finance | Active |
+| Translator | Planned |
+| Statistics | Planned |
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Vision](docs/vision.md) | Why Companion exists. Mission, goals, philosophy. |
-| [Architecture](docs/architecture.md) | System design, component hierarchy, dependency rules. |
-| [Module API](docs/module-api.md) | Module lifecycle, interface, registration patterns. |
-| [UI Guidelines](docs/ui-guidelines.md) | Visual standards, spacing, colors, behaviors. |
-| [Coding Standards](docs/coding-standards.md) | Naming, typing, formatting, forbidden practices. |
-| [Project Structure](docs/project-structure.md) | Directory layout and purpose. |
-| [Branding](docs/branding.md) | Logo usage, icon generation, brand consistency. |
-| [Security](docs/security.md) | Threat model, protection strategy, limitations. |
-| [Build](docs/build.md) | Build pipeline, current and future. |
-| [Roadmap](docs/roadmap.md) | Version plan, feature timeline. |
-| [Decision Log](docs/decision-log.md) | Architecture Decision Records. |
+| [Vision](docs/vision.md) | Why Companion exists — mission, goals, philosophy |
+| [Architecture](docs/architecture.md) | System design, layers, dependency rules |
+| [Module API](docs/module-api.md) | Module lifecycle, interface, registration |
+| [UI Guidelines](docs/ui-guidelines.md) | Visual standards, spacing, colors |
+| [Coding Standards](docs/coding-standards.md) | Naming, typing, formatting, architecture rules |
+| [Project Structure](docs/project-structure.md) | Directory layout and purpose |
+| [Branding](docs/branding.md) | Logo, colors, brand consistency |
+| [Security](docs/security.md) | Threat model, protection, limitations |
+| [Build](docs/build.md) | Build pipeline — legacy, current, future |
+| [Roadmap](docs/roadmap.md) | Version plan, feature timeline |
+| [Decision Log](docs/decision-log.md) | Architecture Decision Records |
+| [AI Rules](docs/ai-rules.md) | Mandatory rules for AI assistants |
 
-## Development
+## Getting Started
 
 ### Prerequisites
 
@@ -84,7 +84,7 @@ Companion/
 node agencybooster-devtoolkit/build-finance.mjs
 ```
 
-### Install
+### Install (Tampermonkey — Development)
 
 1. Install Tampermonkey browser extension
 2. Create new userscript
@@ -99,17 +99,28 @@ Enable diagnostic logging:
 localStorage.setItem("ab-dev", "1");
 ```
 
-## Coding Standards
+## Development
+
+### Coding Standards
 
 See [Coding Standards](docs/coding-standards.md) for complete guidelines.
 
-### Quick Reference
-
+**Quick Reference:**
 - **Classes:** PascalCase (`CompanionApp`, `ModuleManager`)
 - **Methods:** camelCase (`registerModule`, `getModules`)
 - **Constants:** SCREAMING_SNAKE_CASE (`DEFAULT_STATE`, `STORAGE_KEY`)
 - **Files:** kebab-case (`companion-app.ts`, `finance-widget.ts`)
 - **CSS:** kebab-case (`ab-finance-header`, `ab-companion-launcher`)
+
+### Architecture Rules
+
+See [Architecture](docs/architecture.md) and [AI Rules](docs/ai-rules.md).
+
+**Key Rules:**
+- CompanionApp never imports specific modules
+- Modules never import other modules
+- Business logic never exists in UI classes
+- Every feature starts with documentation
 
 ## Roadmap
 

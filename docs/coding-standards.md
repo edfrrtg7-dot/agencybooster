@@ -41,7 +41,7 @@ Used for:
 
 ## Folder Naming
 
-- All source directories use lowercase: `companion`, `core`, `shared`
+- All source directories use lowercase: `companion`
 - No PascalCase or camelCase in directory names
 - No abbreviations unless universally understood
 
@@ -321,3 +321,82 @@ if (localStorage.getItem(DEV_KEY)) { }
 - Only widget classes manipulate the DOM
 - Controllers must not create or modify DOM elements
 - API clients must not access the DOM
+
+---
+
+# Architecture Rules
+
+These rules are mandatory. Every implementation must follow them.
+
+## Core Rules
+
+### CompanionApp never imports specific modules
+
+CompanionApp works exclusively through the `CompanionModule` interface. It never imports Finance, Translator, Statistics, or any other module directly.
+
+```typescript
+// Forbidden in companion-app.ts
+import { FinanceWidget } from "./finance-widget";
+
+// Required
+import { ModuleManager } from "./module-manager";
+```
+
+### Modules never import other modules
+
+No module imports another module's types, classes, or DOM elements. Modules are independent units that communicate only through ModuleManager.
+
+```typescript
+// Forbidden in translator.ts
+import { FinanceState } from "./finance-controller";
+
+// Required — modules are fully isolated
+```
+
+### Business logic never exists inside UI
+
+Widget classes handle rendering and user interaction only. Business logic belongs in controllers, services, or utility functions.
+
+```typescript
+// Forbidden in widget
+const filtered = transactions.filter(tx => tx.sum > 100);
+
+// Required — logic belongs in controller or mapper
+const filtered = FinanceMapper.filterBySum(transactions, 100);
+```
+
+### Controllers never manipulate DOM
+
+Controllers manage state and orchestrate data flow. They never create, modify, or query DOM elements.
+
+```typescript
+// Forbidden in controller
+document.getElementById("status").textContent = "Loaded";
+
+// Required — widget handles DOM updates
+this.widget.render(state);
+```
+
+### CompanionWindow owns all window behavior
+
+Drag, resize, collapse, persist, show, hide — all window behavior belongs in CompanionWindow. Subclasses implement content only.
+
+### ModuleManager owns lifecycle
+
+Only ModuleManager may register, open, close, or destroy modules. No other component manages module lifecycle.
+
+### Documentation is authoritative
+
+If code conflicts with documentation, documentation wins (until explicitly updated). Documentation changes require approval.
+
+### Architecture changes require ADR
+
+Any change to the architecture described in `architecture.md` requires a new Architecture Decision Record. No exceptions.
+
+### Every feature starts with documentation
+
+Before implementing a feature, document it. Design comes before code.
+
+### Every public API requires documentation
+
+Every public class, method, interface, and type must have JSDoc documentation. Undocumented public APIs are incomplete.

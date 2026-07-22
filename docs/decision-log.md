@@ -8,11 +8,94 @@ Architecture Decision Records (ADRs) capture important architectural decisions a
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
+| [ADR-000](#adr-000) | ADR process documentation | Accepted | 2026 |
 | [ADR-001](#adr-001) | Companion becomes a Chrome Extension | Accepted | 2026 |
 | [ADR-002](#adr-002) | Companion follows modular architecture | Accepted | 2026 |
 | [ADR-003](#adr-003) | CompanionWindow is the only window base class | Accepted | 2026 |
 | [ADR-004](#adr-004) | ModuleManager owns module lifecycle | Accepted | 2026 |
 | [ADR-005](#adr-005) | Documentation is the source of truth | Accepted | 2026 |
+
+---
+
+## ADR-000
+
+### Title
+
+ADR process documentation
+
+### Status
+
+Accepted
+
+### Context
+
+The Companion project needs a structured way to record architectural decisions. Without a formal process, decisions are made inconsistently, rationale is lost, and future contributors (human or AI) cannot understand why the architecture looks the way it does.
+
+### Decision
+
+All significant architectural decisions are documented as Architecture Decision Records (ADRs). An ADR is required when:
+
+- Introducing or removing a layer in the architecture
+- Changing the module interface (`CompanionModule`)
+- Modifying dependency rules between components
+- Adopting or replacing a technology
+- Changing the build pipeline
+- Establishing new coding or documentation standards
+- Any change to `architecture.md`
+
+ADRs are **not** required for:
+- Bug fixes
+- Feature implementations within existing architecture
+- Documentation corrections
+- Style or formatting changes
+
+### ADR Structure
+
+Every ADR follows this structure:
+
+| Section | Purpose |
+|---------|---------|
+| Title | Short description of the decision |
+| Status | `Proposed`, `Accepted`, `Deprecated`, or `Superseded by ADR-XXX` |
+| Context | What is the issue that motivates this decision? |
+| Decision | What is the change being decided? |
+| Consequences | Positive and negative outcomes |
+| Related | Links to related documentation |
+
+### ADR Workflow
+
+1. **Propose** — Write the ADR with status `Proposed`
+2. **Review** — Discuss with stakeholders
+3. **Accept** — Change status to `Accepted`
+4. **Index** — Add to the ADR Index table
+5. **Implement** — Make the architectural change
+
+### ADR Lifecycle
+
+| Status | Meaning |
+|--------|---------|
+| Proposed | Under consideration, not yet decided |
+| Accepted | Approved and in effect |
+| Deprecated | No longer relevant, but preserved for history |
+| Superseded | Replaced by a newer ADR (reference the replacing ADR) |
+
+### Consequences
+
+**Positive:**
+- Decisions are documented and traceable
+- Rationale is preserved for future contributors
+- AI assistants can understand architectural history
+- Consistent decision-making process
+
+**Negative:**
+- Additional overhead for small changes
+- ADRs must be maintained
+- Process must be followed consistently
+
+### Related
+
+- [Architecture](architecture.md)
+- [Coding Standards](coding-standards.md)
 
 ---
 

@@ -1,73 +1,157 @@
 # Roadmap
 
-## M1 — Repository Setup
+## Overview
 
-Establish the project foundation and documentation.
+Companion evolves through versioned releases. Each version delivers complete, tested functionality. No version ships incomplete features.
 
-- Initialize repository with directory structure
-- Write all project documentation (README, PROJECT, AI_CONTEXT, CODING_RULES, ARCHITECTURE)
-- Define module interfaces and lifecycle contracts
-- Set up coding standards and commit conventions
-- Create roadmap and TODO tracking
+## Version History
 
-## M2 — Current Userscript Migration
+### Pre-release (Current)
 
-Extract and migrate essential functionality from the original AgencyBooster Developer Toolkit.
+- Tampermonkey userscript delivery
+- Finance module (complete)
+- CompanionWindow base class
+- ModuleManager lifecycle
+- Documentation foundation
 
-- Port the core module system (Module Manager, lifecycle management)
-- Port the Event Bus with namespaced publish-subscribe
-- Port the Config system with defaults and persistence
-- Port the Logger with structured output and severity levels
-- Port Runtime Spy module for console and error interception
-- Port Network Spy module for request monitoring
-- Port DOM Inspector module for element analysis
-- Port Storage Inspector module for storage viewing and editing
-- Port Event Spy module for DOM event listener discovery
-- Port Dashboard module for consolidated panel view
-- Verify all migrated modules function correctly
+## Version Plan
 
-## M3 — Diagnostics
+### Version 1.0 — Chrome Extension
 
-Build the diagnostic collection and reporting system.
+**Theme:** Platform Transition
 
-- Define the DiagnosticCollector interface and base implementation
-- Implement runtime environment information gathering
-- Build module state snapshot collection
-- Create the DiagnosticReport structure and serializer
-- Implement on-demand diagnostic capture
-- Add diagnostic history storage and retrieval
-- Build diagnostic comparison between snapshots
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Chrome Extension | Planned | Manifest V3 wrapper |
+| Finance | Complete | Live finance data with shift filtering |
+| Settings | Planned | Module preferences and configuration |
+| Background Script | Planned | Service worker for persistent state |
+| Permissions | Planned | Minimal permission model |
 
-## M4 — Snippet Manager
+**Milestones:**
+1. Extension scaffolding (manifest, icons, build pipeline)
+2. Content script injection
+3. Settings module
+4. Finance migration to extension context
+5. Chrome Web Store preparation
 
-Build the snippet storage and execution system.
+### Version 1.1 — Translator
 
-- Define the Snippet interface with metadata fields
-- Implement snippet CRUD operations through Storage
-- Build the snippet execution sandbox
-- Add category and tag management
-- Implement search and filtering
-- Add snippet import and export
-- Track execution history and results
+**Theme:** Language Support
 
-## M5 — Companion
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Translator Module | Planned | Real-time message translation |
+| Language Detection | Planned | Automatic source language identification |
+| Translation History | Planned | Recent translations cache |
+| Quick Phrases | Planned | Saved phrase library |
 
-Build the cross-tab coordination system.
+**Milestones:**
+1. Translator module scaffolding
+2. Translation API integration
+3. Widget UI implementation
+4. Quick phrases feature
+5. History and caching
 
-- Implement tab detection and presence tracking using browser APIs
-- Build inter-tab message passing layer
-- Implement configuration synchronization between instances
-- Add diagnostic event relay for consolidated viewing
-- Build the presence indicator in the UI
-- Support command relay between tabs
+### Version 1.2 — Statistics
 
-## M6 — Toolkit Extraction
+**Theme:** Data Insights
 
-Refactor the toolkit into a clean, distributable form.
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Statistics Module | Planned | Operational analytics |
+| Activity Dashboard | Planned | Daily/weekly/monthly metrics |
+| Performance Charts | Planned | Visual trend analysis |
+| Export | Planned | Data export to CSV |
 
-- Separate build configuration from runtime code
-- Create a clean entry point for toolkit initialization
-- Implement a plugin system for third-party module registration
-- Build a distribution package for browser extension and userscript contexts
-- Add comprehensive documentation for toolkit integration
-- Create example configurations and usage patterns
+**Milestones:**
+1. Statistics module scaffolding
+2. Data collection pipeline
+3. Dashboard UI
+4. Chart rendering
+5. Export functionality
+
+### Version 1.3 — Rules
+
+**Theme:** Automation
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Rules Module | Planned | Workflow automation |
+| Trigger System | Planned | Event-based rule execution |
+| Action Library | Planned | Predefined action templates |
+| Rule Editor | Planned | Visual rule builder |
+
+**Milestones:**
+1. Rules module scaffolding
+2. Trigger system implementation
+3. Action library
+4. Rule editor UI
+5. Testing framework
+
+### Version 1.4 — AI Assistant
+
+**Theme:** Intelligence
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| AI Module | Planned | Intelligent assistance |
+| Context Awareness | Planned | CRM state understanding |
+| Suggestion Engine | Planned | Proactive recommendations |
+| Natural Language | Planned | Conversational interface |
+
+**Milestones:**
+1. AI module scaffolding
+2. Context collection pipeline
+3. Suggestion engine
+4. Natural language interface
+5. Integration testing
+
+### Version 2.0 — Platform Maturity
+
+**Theme:** Ecosystem
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Module SDK | Planned | Third-party module development |
+| Plugin System | Planned | Community extensions |
+| API Layer | Planned | Programmatic access |
+| Documentation Site | Planned | Interactive documentation |
+
+**Milestones:**
+1. SDK design and implementation
+2. Plugin sandbox
+3. API gateway
+4. Documentation site
+5. Community guidelines
+
+## Release Criteria
+
+Each version must meet:
+
+1. All features complete and tested
+2. Documentation updated
+3. Bundle size within budget
+4. Zero production incidents from previous version
+5. All acceptance criteria met
+
+## Dependencies
+
+```mermaid
+graph TD
+    V10[1.0 Chrome Extension] --> V11[1.1 Translator]
+    V10 --> V12[1.2 Statistics]
+    V11 --> V13[1.3 Rules]
+    V12 --> V13
+    V13 --> V14[1.4 AI Assistant]
+    V14 --> V20[2.0 Platform Maturity]
+```
+
+## Risk Factors
+
+| Risk | Mitigation |
+|------|------------|
+| Chrome Extension review delays | Submit early, address feedback quickly |
+| API changes in GoldenBride CRM | Abstract API layer, version endpoints |
+| Feature scope creep | Strict adherence to version scope |
+| Performance degradation | Bundle size budget, profiling |

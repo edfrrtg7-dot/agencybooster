@@ -26,7 +26,7 @@ stateDiagram-v2
 | Closed | Module's widget is hidden but resources persist |
 | Destroyed | Module's resources are cleaned up and removed |
 
-## Interface
+## Current Interface
 
 ```typescript
 interface CompanionModule {
@@ -49,6 +49,104 @@ interface CompanionModule {
     destroy(): void;
 }
 ```
+
+## Future Interface
+
+The interface will be extended to support richer module metadata and async initialization:
+
+```typescript
+interface CompanionModule {
+    /** Unique module identifier. Used for registration and lookup. */
+    readonly name: string;
+
+    /** Human-readable label shown in the launcher menu. */
+    readonly label: string;
+
+    /** Semantic version string (e.g., "1.0.0"). */
+    readonly version: string;
+
+    /** Optional icon for the launcher menu. Raw SVG string or data URI. */
+    readonly icon?: string;
+
+    /** Optional async initialization. Called before first open(). */
+    initialize?(): Promise<void>;
+
+    /** Open/show the module. Creates internal resources on first call. */
+    open(): void;
+
+    /** Close/hide the module. Resources persist for quick reopen. */
+    close(): void;
+
+    /** Whether the module is currently open. */
+    readonly isOpen: boolean;
+
+    /** Destroy the module and release all resources. */
+    destroy(): void;
+}
+```
+
+### New Properties
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `version` | `string` | Yes | Semantic version for module identification |
+| `icon` | `string` | No | SVG or data URI for launcher menu icon |
+| `initialize()` | `() => Promise<void>` | No | Async setup before first open |
+
+### initialize() Pattern
+
+The optional `initialize()` method enables lazy and async module setup:
+
+```typescript
+function createTranslatorModule(): CompanionModule {
+    let widget: TranslatorWidget | null = null;
+    let initialized = false;
+    let ready = false;
+
+    return {
+        name: "translator",
+        label: "Translator",
+        version: "1.0.0",
+        icon: COMPANION_LOGO_SVG,
+
+        async initialize(): Promise<void> {
+            if (ready) return;
+            // Load dictionaries, prepare API clients, etc.
+            await loadDictionaries();
+            ready = true;
+        },
+
+        open(): void {
+            if (!initialized) {
+                initialized = true;
+                widget = new TranslatorWidget();
+                widget.hide();
+            }
+            widget?.show();
+        },
+
+        close(): void {
+            widget?.hide();
+        },
+
+        get isOpen(): boolean {
+            return widget?.isVisible ?? false;
+        },
+
+        destroy(): void {
+            widget?.destroy();
+            widget = null;
+            initialized = false;
+            ready = false;
+        },
+    };
+}
+```
+
+ModuleManager will call `initialize()` before the first `open()` if it exists. This enables:
+- Loading external resources (dictionaries, configurations)
+- Async API client setup
+- Lazy dependency loading
 
 ## Module Registration
 
@@ -84,6 +182,7 @@ function createFinanceModule(): CompanionModule {
     return {
         name: "finance",
         label: "Finance",
+        version: "1.0.0",
         open(): void {
             if (!initialized) {
                 initialized = true;
@@ -128,6 +227,7 @@ function createFinanceModule(): CompanionModule {
 - Open and close modules
 - Expose the module list to CompanionApp
 - Coordinate lifecycle events
+- Call `initialize()` before first `open()` (future)
 
 ### CompanionApp Responsibilities
 

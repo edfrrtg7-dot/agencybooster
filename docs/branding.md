@@ -6,12 +6,24 @@ Companion uses a consistent visual identity across all modules. Brand assets are
 
 ## Single Source of Truth
 
-All branding assets originate from a single source:
+The master branding asset is:
 
 | Asset | Location | Format |
 |-------|----------|--------|
-| Logo | `src/companion/brand-logo.ts` | SVG string constant |
+| Logo | `assets/logo.svg` | SVG (master) |
 | Colors | `src/companion/brand-colors.ts` | TypeScript constants |
+
+### Logo Source
+
+`assets/logo.svg` is the master asset. All other logo representations are derived from it.
+
+| Derived Asset | Location | Source |
+|---------------|----------|--------|
+| SVG string | `src/companion/brand-logo.ts` | Generated from `assets/logo.svg` |
+| PNG icons | `assets/icons/` | Generated from `assets/logo.svg` |
+| Data URI | `src/companion/brand-logo.ts` | Generated from `assets/logo.svg` |
+
+**Rule:** `assets/logo.svg` is the source of truth. `brand-logo.ts` is a generated artifact.
 
 ## Logo Usage
 
@@ -21,6 +33,7 @@ All branding assets originate from a single source:
 2. **Never embed logo SVG inline.** Always import from `brand-logo.ts`.
 3. **Never recreate the logo for different contexts.** The same SVG is used everywhere.
 4. **Never modify logo colors or proportions.**
+5. **All icon generation must use `assets/logo.svg`** as the source.
 
 ### Access
 
@@ -41,6 +54,37 @@ element.style.backgroundImage = `url(${COMPANION_LOGO_DATA_URI})`;
 |--------|------|-------------|
 | `COMPANION_LOGO_SVG` | `string` | Raw SVG markup for innerHTML injection |
 | `COMPANION_LOGO_DATA_URI` | `string` | Data URI for CSS background usage |
+
+## Icon Generation
+
+### Requirements
+
+- All icons must be derived from `assets/logo.svg`
+- No custom icon creation without approval
+- Icons must work at standard sizes
+- Icons must be recognizable at 16px
+
+### Required Sizes
+
+| Size | Usage | Filename |
+|------|-------|----------|
+| 16px | Favicon, browser tab | `icon-16x16.png` |
+| 32px | Extension icon | `icon-32x32.png` |
+| 48px | Chrome Web Store listing | `icon-48x48.png` |
+| 128px | Chrome Web Store detail | `icon-128x128.png` |
+
+### Naming Convention
+
+```
+icon-{size}x{size}.png
+```
+
+### Generation Process
+
+1. Start with `assets/logo.svg`
+2. Render at target size
+3. Export as PNG
+4. Save to `assets/icons/`
 
 ## Color System
 
@@ -66,36 +110,6 @@ element.style.background = BRAND_COLORS.PRIMARY;
 element.style.color = BRAND_COLORS.TEXT;
 ```
 
-## Icon Generation
-
-### Requirements
-
-- All icons must be derived from the official logo
-- No custom icon creation without approval
-- Icons must work at standard sizes: 16px, 32px, 48px, 128px
-- Icons must be recognizable at 16px
-
-### Sizes
-
-| Size | Usage |
-|------|-------|
-| 16px | Favicon, browser tab |
-| 32px | Extension icon |
-| 48px | Chrome Web Store listing |
-| 128px | Chrome Web Store detail |
-
-### Naming Convention
-
-```
-icon-{size}x{size}.png
-```
-
-Examples:
-- `icon-16x16.png`
-- `icon-32x32.png`
-- `icon-48x48.png`
-- `icon-128x128.png`
-
 ## Typography
 
 ### Font Stack
@@ -119,6 +133,7 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 - Use the official logo from `brand-logo.ts`
 - Follow spacing and typography from [UI Guidelines](ui-guidelines.md)
 - Maintain visual consistency across modules
+- Generate icons from `assets/logo.svg`
 
 ### Don't
 
@@ -127,6 +142,7 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 - Use third-party icon libraries
 - Introduce custom fonts
 - Mix brand styles between modules
+- Use inline SVG without importing from `brand-logo.ts`
 
 ## Future Branding
 

@@ -103,6 +103,7 @@ Project documentation. See [Documentation Index](#documentation-index) for compl
 | [Build](build.md) | Build pipeline, current and future. |
 | [Roadmap](roadmap.md) | Version plan, feature timeline. |
 | [Decision Log](decision-log.md) | Architecture Decision Records. |
+| [AI Rules](ai-rules.md) | Mandatory rules for AI assistants. |
 
 ## File Naming Rules
 
