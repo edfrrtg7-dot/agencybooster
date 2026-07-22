@@ -20,6 +20,7 @@ import { FinanceController, FinanceState, FinanceStateListener } from "./finance
 import { FinanceTransaction } from "./finance-mapper";
 import { FinanceShift, ShiftType } from "./finance-shift";
 import { COMPANION_LOGO_SVG } from "./brand-logo";
+import { STORAGE_KEYS } from "./storage-keys";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,7 +41,7 @@ export interface FinanceWidgetConfig {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CLASS_PREFIX = "ab-finance";
-const STORAGE_KEY = "ab-finance-widget-state";
+const STORAGE_KEY = STORAGE_KEYS.FINANCE_WIDGET_STATE;
 
 const DEFAULT_STATE = {
     x: 24,
@@ -61,6 +62,7 @@ export class FinanceWidget extends CompanionWindow {
     private refreshBtn: HTMLButtonElement | null = null;
     private shiftBtn: HTMLButtonElement | null = null;
     private shiftDropdown: HTMLDivElement | null = null;
+    private shiftOptions: HTMLElement[] = [];
 
     constructor(controller: FinanceController, config: FinanceWidgetConfig = {}) {
         const windowConfig: CompanionWindowConfig = {
@@ -87,6 +89,13 @@ export class FinanceWidget extends CompanionWindow {
         if (this.destroyed) return;
         this.unsubscribe();
         this.controller.cancelPending();
+
+        // Remove shift option listeners
+        for (const option of this.shiftOptions) {
+            option.removeEventListener("click", this.onShiftSelect);
+        }
+        this.shiftOptions = [];
+
         this.refreshBtn = null;
         this.shiftBtn = null;
         this.shiftDropdown = null;
@@ -183,6 +192,7 @@ export class FinanceWidget extends CompanionWindow {
             option.dataset.shift = def.type;
             option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
             option.addEventListener("click", this.onShiftSelect);
+            this.shiftOptions.push(option);
             shiftDropdown.appendChild(option);
         }
 

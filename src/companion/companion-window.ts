@@ -52,13 +52,16 @@ const MAX_HEIGHT = 600;
 const COLLAPSED_WIDTH = 330;
 const COLLAPSED_HEIGHT = 44;
 
+import { StorageService } from "./storage-service";
+import { STORAGE_KEYS } from "./storage-keys";
+
 // ---------------------------------------------------------------------------
 // Persistence helpers
 // ---------------------------------------------------------------------------
 
 function loadState(storageKey: string): WindowState | null {
     try {
-        const raw = localStorage.getItem(storageKey);
+        const raw = StorageService.get(storageKey as (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS]);
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (
@@ -74,16 +77,16 @@ function loadState(storageKey: string): WindowState | null {
             return parsed as WindowState;
         }
     } catch {
-        // localStorage unavailable or corrupted
+        // Storage unavailable or corrupted
     }
     return null;
 }
 
 function saveState(storageKey: string, state: WindowState): void {
     try {
-        localStorage.setItem(storageKey, JSON.stringify(state));
+        StorageService.set(storageKey as (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS], JSON.stringify(state));
     } catch {
-        // localStorage full or unavailable
+        // Storage full or unavailable
     }
 }
 

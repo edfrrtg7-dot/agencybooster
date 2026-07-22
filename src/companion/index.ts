@@ -16,6 +16,28 @@ export { ModuleManager } from "./module-manager";
 export { CompanionWindow } from "./companion-window";
 export type { WindowState, CompanionWindowConfig } from "./companion-window";
 
+// StorageService — centralized storage abstraction
+export { StorageService } from "./storage-service";
+export type { StorageAdapter } from "./storage-adapter";
+export { LocalStorageAdapter, ChromeStorageAdapter } from "./storage-adapter";
+export { STORAGE_KEYS } from "./storage-keys";
+export type { StorageKey } from "./storage-keys";
+export { STORAGE_VERSION, getStoredVersion, setStoredVersion, isMigrationNeeded } from "./storage-version";
+export { MIGRATIONS, runMigrations } from "./storage-migration";
+export type { Migration } from "./storage-migration";
+
+// Diagnostics — leveled logging (dev mode only)
+export { diag, diagWarn, diagError, diagDebug, isDevMode, DiagnosticLevel } from "./dev";
+
+// Companion Diagnostics — runtime diagnostics object (dev mode only)
+export {
+    collectDiagnostics,
+    logDiagnostics,
+    exposeDiagnostics,
+    setRegisteredModules,
+} from "./companion-diagnostics";
+export type { CompanionDiagnosticsInfo } from "./companion-diagnostics";
+
 // FinanceApiClient — HTTP communication layer
 export { FinanceApiClient } from "./finance-api-client";
 export type { FinanceApiResponse, FinanceApiClientConfig } from "./finance-api-client";

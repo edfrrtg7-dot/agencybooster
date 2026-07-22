@@ -82,27 +82,30 @@ const ALL_SHIFTS: readonly ShiftType[] = ["morning", "day", "night"];
 
 // ---------------------------------------------------------------------------
 // Persistence
+import { StorageService } from "./storage-service";
+import { STORAGE_KEYS } from "./storage-keys";
+
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = "agencybooster-finance-shift";
+const STORAGE_KEY = STORAGE_KEYS.FINANCE_STATE;
 
 function loadShift(): ShiftType | null {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = StorageService.get(STORAGE_KEY);
         if (raw && isShiftType(raw)) {
             return raw;
         }
     } catch {
-        // localStorage unavailable or corrupted
+        // Storage unavailable or corrupted
     }
     return null;
 }
 
 function saveShift(shift: ShiftType): void {
     try {
-        localStorage.setItem(STORAGE_KEY, shift);
+        StorageService.set(STORAGE_KEY, shift);
     } catch {
-        // localStorage full or unavailable
+        // Storage full or unavailable
     }
 }
 
